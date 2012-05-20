@@ -15,7 +15,7 @@ Just add ember as a requirement to your package.json:
 }
 ```
 
-In you code, you can load the entire Ember stack by just requiring the package.
+In your code, you can load the entire Ember stack by just requiring the package.
 This will add Ember to the global namespace in your application.
 
 ```javascript
@@ -27,8 +27,8 @@ MyApp = Ember.Application.create({
 ```
 
 If you don't want to use the entire Ember stack, you can just require the 
-specific module that you want. For example, a lot of server side code might
-just want to use ember States for statecharting:
+specific module that you want. For example, a lot of server side code just 
+needs States for statecharting:
 
 ```javascript
 require('ember/states');
@@ -83,5 +83,6 @@ UserView = Ember.View.extend({
 });
 ```
 
-For a fully functioning example of an application, check out the `examples`
+For a fully functioning example of an application, check out the 
+[examples](https://github.com/charlesjolley/node-ember/tree/master/examples) 
 folder.
