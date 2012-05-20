@@ -154,4 +154,4 @@ window.ember_deprecateFunc  = Ember.deprecateFunc("ember_deprecateFunc is deprec
 })();
 
 
-})(this);
+})("undefined" === typeof global ? window : global);

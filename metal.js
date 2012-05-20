@@ -5289,4 +5289,4 @@ Ember.beforeObserver = function(func) {
 })();
 
 
-})(this);
+})("undefined" === typeof global ? window : global);
