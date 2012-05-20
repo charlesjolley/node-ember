@@ -4,15 +4,17 @@ JAKE = jake
 
 VENDOR_PATH         = PATH.resolve __dirname, 'vendor'
 VENDOR_EMBER        = PATH.resolve VENDOR_PATH, 'ember'
+VENDOR_EMBER_DATA   = PATH.resolve VENDOR_PATH, 'ember-data'
 NEEDS_REAL_WINDOW   = ['metamorph']
-NEEDS_GLOBAL_WINDOW = ['metal', 'debug']
+NEEDS_GLOBAL_WINDOW = ['metal', 'debug', 'data']
 CONVOY_VERSION      = '~0.3'
 
 # Some of the packages in ember don't fully specify their dependencies. Add
 # missing dependencies here.
 FORCED_DEPENDENCIES = 
   'ember': ['ember-application']
-  'ember-states': ['ember-runtime']
+  'states': ['ember-runtime']
+  'data': ['ember-states']
 
 
 npmVersion = (version) ->
@@ -31,13 +33,19 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
   moduleNames = FS.readdirSync(moduleRoot).map (filename) ->
     return null if filename == 'handlebars.js' # uses external version
     PATH.basename filename, '.js'
+  moduleNames.push 'ember-data' # manually add this.
 
   moduleNames.forEach (moduleName) ->
     return if !moduleName
 
     # get paths to origina files before we drop the ember- prefix
-    sourcePath = PATH.resolve moduleRoot, "#{moduleName}.js"
-    packageJSON = PATH.resolve VENDOR_EMBER,'packages',moduleName,'package.json'
+    if moduleName == 'ember-data'
+      sourcePath = PATH.resolve VENDOR_EMBER_DATA, 'dist', 'modules', "#{moduleName}.js"
+      packageJSON = PATH.resolve VENDOR_EMBER_DATA,'packages',moduleName,'package.json'
+    else
+      sourcePath = PATH.resolve moduleRoot, "#{moduleName}.js"
+      packageJSON = PATH.resolve VENDOR_EMBER,'packages',moduleName,'package.json'
+
     packageJSON = JSON.parse FS.readFileSync(packageJSON, 'utf8')
     basePackageJSON = packageJSON if moduleName == 'ember' # needed later
 
@@ -95,7 +103,7 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
     if NEEDS_GLOBAL_WINDOW.indexOf(moduleName)>=0
       outputBody.push '(function(window) {'
       outputBody.push sourceBody
-      outputBody.push '})(this);'
+      outputBody.push '})("undefined" === typeof global ? window : global);'
     else
       outputBody.push sourceBody
 
@@ -136,6 +144,7 @@ namespace 'vendor', ->
     jake.exec [
       "git submodule update --init"
       "bundle install --gemfile #{PATH.resolve VENDOR_EMBER, 'Gemfile'}"
+      "bundle install --gemfile #{PATH.resolve VENDOR_EMBER_DATA, 'Gemfile'}"
     ], (() -> console.log 'Done.'; complete() ), { stdout: true, stderr: true }
   ), async: true
 
@@ -151,8 +160,8 @@ namespace 'vendor', ->
   desc "Builds ember files inside of vendor. Invoked before main dist"
   task 'dist', (->
     console.log 'Build distribution in vendor...'
-    jake.exec ["cd #{VENDOR_EMBER}; rake dist --trace"], (() ->
-      console.log 'Done.'
-      complete()
-    ), { stdout: true, stderr: true }
+    jake.exec [
+      "cd #{VENDOR_EMBER}; rake dist --trace"
+      "cd #{VENDOR_EMBER_DATA}; rake dist --trace"
+    ], complete, { stdout: true, stderr: true }
   ), async: true
