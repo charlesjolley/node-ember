@@ -1,5 +1,5 @@
 
-require('./ember-handlebars');
+require('./handlebars');
 var FS = require('fs');
 
 // Precompiles Handlebars templates when used with a convoy pipeline
