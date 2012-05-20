@@ -1,0 +1,15 @@
+{
+  "name": "ember",
+  "summary": "Ember - JavaScript Application Framework",
+  "description": "Ember - JavaScript Application Framework",
+  "homepage": "http://github.com/emberjs/ember.js",
+  "author": ["Yehuda Katz", "Tom Dale", "Charles Jolley"],
+  "maintainer": "Charles Jolley <charles@sproutcore.com>",
+  "version": "0.9.7-1",
+  "dependencies": {
+    "handlebars": "~> 1.0.0-beta.6",
+    "window": "git://github.com/charlesjolley/node-window.git#master",
+    "jquery": "~> 1.7"
+  },
+  "main": "./ember.js"
+}
