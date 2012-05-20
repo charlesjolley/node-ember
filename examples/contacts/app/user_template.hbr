@@ -1,0 +1,14 @@
+<h1>{{contact.fullName}}</h1>
+<table>
+
+<tr>
+  <td>First Name:</td> 
+  <td>{{view Ember.TextField valueBinding="contact.firstName" size=40}}</td>
+</tr>
+
+<tr>
+  <td>Last Name:</td> 
+  <td>{{view Ember.TextField valueBinding="contact.lastName" size=40}}</td>
+</tr>
+
+</table>

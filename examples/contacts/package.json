@@ -1,0 +1,10 @@
+{
+  "name": "contacts-demo",
+  "version": "1.0.0",
+  "private": true,
+  "dependencies": {
+    "convoy": "~0.3",
+    "connect": "latest",
+    "ember": "latest"
+  }
+}
