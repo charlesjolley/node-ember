@@ -113,7 +113,7 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
   'name summary description homepage author'.split(' ').forEach (key) ->
     packageJSON[key] = basePackageJSON[key]
 
-  packageJSON.version = npmVersion basePackageJSON.version
+  packageJSON.version = "v#{npmVersion basePackageJSON.version}"
 
   externalDependencies.convoy = CONVOY_VERSION
   packageJSON.dependencies = externalDependencies
