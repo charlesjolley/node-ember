@@ -1,12 +1,12 @@
 <!DOCTYPE html>
-<html>
+<html manifest="./app.manifest"> 
+<script>window.START = new Date().getTime();</script>
 <head>
-  <meta rel="stylesheet" href="./app.css">
+  <link rel="stylesheet" href="./app.css">
 </head>
 <body>
-  <h1>Hello!</h1>
+  <h1 class="loading">Loading... (Remove Me in Main.js)<h1>
 </body>
 <script type="text/javascript" src="./app.js"></script>
 <script>require('contacts/app/main')</script>
-
 </html>

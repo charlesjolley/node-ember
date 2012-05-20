@@ -5,6 +5,7 @@
   "dependencies": {
     "convoy": "~0.3",
     "connect": "latest",
-    "ember": "latest"
+    "ember": "latest",
+    "html5-manifest": "git://github.com/charlesjolley/html5-manifest.git#master"
   }
 }
