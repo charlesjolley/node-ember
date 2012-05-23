@@ -534,14 +534,15 @@ Ember._HandlebarsBoundView = Ember._MetamorphView.extend({
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
-var get = Ember.get, getPath = Ember.getPath, set = Ember.set, fmt = Ember.String.fmt;
-var normalizePath = Ember.Handlebars.normalizePath;
+var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt;
+var getPath = Ember.Handlebars.getPath, normalizePath = Ember.Handlebars.normalizePath;
 var forEach = Ember.ArrayUtils.forEach;
 
 var EmberHandlebars = Ember.Handlebars, helpers = EmberHandlebars.helpers;
 
 // Binds a property into the DOM. This will create a hook in DOM that the
 // KVO system will look for and update if the property changes.
+/** @private */
 var bind = function(property, options, preserveContext, shouldDisplay, valueNormalizer) {
   var data = options.data,
       fn = options.fn,
@@ -1108,10 +1109,10 @@ EmberHandlebars.ViewHelper = Ember.Object.create({
 });
 
 /**
-`{{view}}` inserts a new instance of `Ember.View` into a template passing its options
-to the `Ember.View`'s `create` method and using the supplied block as the view's own template.
+  `{{view}}` inserts a new instance of `Ember.View` into a template passing its options
+  to the `Ember.View`'s `create` method and using the supplied block as the view's own template.
 
-An empty `<body>` and the following template:
+  An empty `<body>` and the following template:
 
       <script type="text/x-handlebars">
         A span:
@@ -1120,7 +1121,7 @@ An empty `<body>` and the following template:
         {{/view}}
       </script>
 
-Will result in HTML structure:
+  Will result in HTML structure:
 
       <body>
         <!-- Note: the handlebars template script 
@@ -1135,49 +1136,49 @@ Will result in HTML structure:
         </div>
       </body>
 
-### parentView setting
-The `parentView` property of the new `Ember.View` instance created through `{{view}}`
-will be set to the `Ember.View` instance of the template where `{{view}}` was called.
-    
-    aView = Ember.View.create({
-      template: Ember.Handlebars.compile("{{#view}} my parent: {{parentView.elementId}} {{/view}}")
-    })
+  ### parentView setting
 
-    aView.appendTo('body')
-    
-Will result in HTML structure:
+  The `parentView` property of the new `Ember.View` instance created through `{{view}}`
+  will be set to the `Ember.View` instance of the template where `{{view}}` was called.
 
-    <div id="ember1" class="ember-view">
-      <div id="ember2" class="ember-view">
-        my parent: ember1
+      aView = Ember.View.create({
+        template: Ember.Handlebars.compile("{{#view}} my parent: {{parentView.elementId}} {{/view}}")
+      })
+
+      aView.appendTo('body')
+    
+  Will result in HTML structure:
+
+      <div id="ember1" class="ember-view">
+        <div id="ember2" class="ember-view">
+          my parent: ember1
+        </div>
       </div>
-    </div>
 
+  ### Setting CSS id and class attributes
 
+  The HTML `id` attribute can be set on the `{{view}}`'s resulting element with the `id` option.
+  This option will _not_ be passed to `Ember.View.create`.
 
-### Setting CSS id and class attributes
-The HTML `id` attribute can be set on the `{{view}}`'s resulting element with the `id` option.
-This option will _not_ be passed to `Ember.View.create`.
+      <script type="text/x-handlebars">
+        {{#view tagName="span" id="a-custom-id"}}
+          hello.
+        {{/view}}
+      </script>
 
-    <script type="text/x-handlebars">
-      {{#view tagName="span" id="a-custom-id"}}
-        hello.
-      {{/view}}
-    </script>
+  Results in the following HTML structure:
 
-Results in the following HTML structure:
+      <div class="ember-view">
+        <span id="a-custom-id" class="ember-view">
+          hello.
+        </span>
+      </div>
 
-    <div class="ember-view">
-      <span id="a-custom-id" class="ember-view">
-        hello.
-      </span>
-    </div>
-
-The HTML `class` attribute can be set on the `{{view}}`'s resulting element with
-the `class` or `classNameBindings` options. The `class` option
-will directly set the CSS `class` attribute and will not be passed to
-`Ember.View.create`. `classNameBindings` will be passed to `create` and use
-`Ember.View`'s class name binding functionality:
+  The HTML `class` attribute can be set on the `{{view}}`'s resulting element with
+  the `class` or `classNameBindings` options. The `class` option
+  will directly set the CSS `class` attribute and will not be passed to
+  `Ember.View.create`. `classNameBindings` will be passed to `create` and use
+  `Ember.View`'s class name binding functionality:
 
       <script type="text/x-handlebars">
         {{#view tagName="span" class="a-custom-class"}}
@@ -1185,7 +1186,7 @@ will directly set the CSS `class` attribute and will not be passed to
         {{/view}}
       </script>
 
-Results in the following HTML structure:
+  Results in the following HTML structure:
 
       <div class="ember-view">
         <span id="ember2" class="ember-view a-custom-class">
@@ -1193,9 +1194,9 @@ Results in the following HTML structure:
         </span>
       </div>
 
-### Supplying a different view class
-`{{view}}` can take an optional first argument before its supplied options to specify a
-path to a custom view class.
+  ### Supplying a different view class
+  `{{view}}` can take an optional first argument before its supplied options to specify a
+  path to a custom view class.
 
       <script type="text/x-handlebars">
         {{#view "MyApp.CustomView"}}
@@ -1203,9 +1204,8 @@ path to a custom view class.
         {{/view}}
       </script>
 
-The first argument can also be a relative path. Ember will search for the view class 
-starting at the `Ember.View` of the template where `{{view}}` was used as the root object:
-
+  The first argument can also be a relative path. Ember will search for the view class
+  starting at the `Ember.View` of the template where `{{view}}` was used as the root object:
 
       MyApp = Ember.Application.create({})
       MyApp.OuterView = Ember.View.extend({
@@ -1224,27 +1224,29 @@ Will result in the following HTML:
           hi
         </div>
       </div>
-      
-### Blockless use
-If you supply a custom `Ember.View` subclass that specifies its own template 
-or provide a `templateName` option to `{{view}}` it can be used without supplying a block.
-Attempts to use both a `templateName` option and supply a block will throw an error.
 
-        <script type="text/x-handlebars">
-          {{view "MyApp.ViewWithATemplateDefined"}}
-        </script>
+  ### Blockless use
 
-### viewName property
-You can supply a `viewName` option to `{{view}}`. The `Ember.View` instance will
-be referenced as a property of its parent view by this name.
+  If you supply a custom `Ember.View` subclass that specifies its own template
+  or provide a `templateName` option to `{{view}}` it can be used without supplying a block.
+  Attempts to use both a `templateName` option and supply a block will throw an error.
 
-    aView = Ember.View.create({
-      template: Ember.Handlebars.compile('{{#view viewName="aChildByName"}} hi {{/view}}')
-    })
+      <script type="text/x-handlebars">
+        {{view "MyApp.ViewWithATemplateDefined"}}
+      </script>
 
-    aView.appendTo('body')
-    aView.get('aChildByName') // the instance of Ember.View created by {{view}} helper
-  
+  ### viewName property
+
+  You can supply a `viewName` option to `{{view}}`. The `Ember.View` instance will
+  be referenced as a property of its parent view by this name.
+
+      aView = Ember.View.create({
+        template: Ember.Handlebars.compile('{{#view viewName="aChildByName"}} hi {{/view}}')
+      })
+
+      aView.appendTo('body')
+      aView.get('aChildByName') // the instance of Ember.View created by {{view}} helper
+
   @name Handlebars.helpers.view
   @param {String} path
   @param {Hash} options
@@ -1674,29 +1676,29 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
 
   Given the following Handlebars template on the page
 
-        <script type="text/x-handlebars" data-template-name='a-template'>
-            <div {{action "anActionName"}}>
-              click me
-            </div>
-        </script>
+      <script type="text/x-handlebars" data-template-name='a-template'>
+        <div {{action "anActionName"}}>
+          click me
+        </div>
+      </script>
 
   And application code
 
-        AView = Ember.View.extend({
-          templateName; 'a-template',
-          anActionName: function(event){}
-        })
+      AView = Ember.View.extend({
+        templateName; 'a-template',
+        anActionName: function(event){}
+      })
 
-        aView = AView.create()
-        aView.appendTo('body')
+      aView = AView.create()
+      aView.appendTo('body')
 
   Will results in the following rendered HTML
 
-        <div class="ember-view">
-          <div data-ember-action="1">
-            click me
-          </div>
+      <div class="ember-view">
+        <div data-ember-action="1">
+          click me
         </div>
+      </div>
 
   Clicking "click me" will trigger the `anActionName` method of the `aView` object with a 
   `jQuery.Event` object as its argument. The `jQuery.Event` object will be extended to include
@@ -1707,11 +1709,11 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
   A `target` option can be provided to change which object will receive the method call. This option must be
   a string representing a path to an object:
 
-        <script type="text/x-handlebars" data-template-name='a-template'>
-            <div {{action "anActionName" target="MyApplication.someObject"}}>
-              click me
-            </div>
-        </script>
+      <script type="text/x-handlebars" data-template-name='a-template'>
+        <div {{action "anActionName" target="MyApplication.someObject"}}>
+          click me
+        </div>
+      </script>
 
   Clicking "click me" in the rendered HTML of the above template will trigger the 
   `anActionName` method of the object at `MyApplication.someObject`.  The first argument 
@@ -1720,11 +1722,11 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
 
   A path relative to the template's `Ember.View` instance can also be used as a target:
 
-        <script type="text/x-handlebars" data-template-name='a-template'>
-            <div {{action "anActionName" target="parentView"}}>
-              click me
-            </div>
-        </script>
+      <script type="text/x-handlebars" data-template-name='a-template'>
+        <div {{action "anActionName" target="parentView"}}>
+          click me
+        </div>
+      </script>
 
   Clicking "click me" in the rendered HTML of the above template will trigger the 
   `anActionName` method of the view's parent view.
@@ -1737,23 +1739,22 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
   If an action's target does not implement a method that matches the supplied action name
   an error will be thrown.
 
-
       <script type="text/x-handlebars" data-template-name='a-template'>
-          <div {{action "aMethodNameThatIsMissing"}}>
-            click me
-          </div>
+        <div {{action "aMethodNameThatIsMissing"}}>
+          click me
+        </div>
       </script>
 
   With the following application code
 
-        AView = Ember.View.extend({
-          templateName; 'a-template',
-          // note: no method 'aMethodNameThatIsMissing'
-          anActionName: function(event){}
-        })
+      AView = Ember.View.extend({
+        templateName; 'a-template',
+        // note: no method 'aMethodNameThatIsMissing'
+        anActionName: function(event){}
+      })
 
-        aView = AView.create()
-        aView.appendTo('body')
+      aView = AView.create()
+      aView.appendTo('body')
 
   Will throw `Uncaught TypeError: Cannot call method 'call' of undefined` when "click me" is clicked.
 
@@ -1763,9 +1764,9 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
   `on` option to the helper to specify a different DOM event name:
 
       <script type="text/x-handlebars" data-template-name='a-template'>
-          <div {{action "aMethodNameThatIsMissing" on="doubleClick"}}>
-            click me
-          </div>
+        <div {{action "aMethodNameThatIsMissing" on="doubleClick"}}>
+          click me
+        </div>
       </script>
 
   See `Ember.EventDispatcher` for a list of acceptable DOM event names.
@@ -1829,25 +1830,24 @@ var get = Ember.get, set = Ember.set;
 
   An empty `<body>` and the following application code:
 
-        AView = Ember.View.extend({
-          classNames: ['a-view-with-layout'],
-          layout: Ember.Handlebars.compile('<div class="wrapper">{{ yield }}</div>'),
-          template: Ember.Handlebars.compile('<span>I am wrapped</span>')
-        })
+      AView = Ember.View.extend({
+        classNames: ['a-view-with-layout'],
+        layout: Ember.Handlebars.compile('<div class="wrapper">{{ yield }}</div>'),
+        template: Ember.Handlebars.compile('<span>I am wrapped</span>')
+      })
 
-        aView = AView.create()
-        aView.appendTo('body')
+      aView = AView.create()
+      aView.appendTo('body')
 
   Will result in the following HTML output:
 
-        <body>
-          <div class='ember-view a-view-with-layout'>
-            <div class="wrapper">
-              <span>I am wrapped</span>
-            </div>
+      <body>
+        <div class='ember-view a-view-with-layout'>
+          <div class="wrapper">
+            <span>I am wrapped</span>
           </div>
-        </body>
-
+        </div>
+      </body>
 
   The yield helper cannot be used outside of a template assigned to an `Ember.View`'s `layout` property
   and will throw an error if attempted.

@@ -17,7 +17,7 @@ if ('undefined' === typeof Ember) {
 /**
   @namespace
   @name Ember
-  @version 0.9.8
+  @version 0.9.8.1
 
   All Ember methods and functions are defined inside of this namespace.
   You generally should not add new properties to this namespace as it may be
@@ -56,10 +56,10 @@ Ember.toString = function() { return "Ember"; };
 /**
   @static
   @type String
-  @default '0.9.8'
+  @default '0.9.8.1'
   @constant
 */
-Ember.VERSION = '0.9.8';
+Ember.VERSION = '0.9.8.1';
 
 /**
   @static
@@ -187,6 +187,7 @@ if ('undefined' === typeof ember_assert) { window.ember_assert = Ember.K; }
 if ('undefined' === typeof ember_warn) { window.ember_warn = Ember.K; }
 if ('undefined' === typeof ember_deprecate) { window.ember_deprecate = Ember.K; }
 if ('undefined' === typeof ember_deprecateFunc) {
+  /** @private */
   window.ember_deprecateFunc = function(_, func) { return func; };
 }
 
@@ -4637,7 +4638,7 @@ mixinProperties(Binding,
 
   Ember's built in binding creation method makes it easy to automatically
   create bindings for you. You should always use the highest-level APIs
-  available, even if you understand how to it works underneath.
+  available, even if you understand how it works underneath.
 
   @since Ember 0.9
 */
