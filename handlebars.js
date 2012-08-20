@@ -9,11 +9,13 @@ require("./metamorph");
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 /*globals Handlebars */
+var objectCreate = Ember.create;
+
 /**
   @namespace
   @name Handlebars
@@ -25,6 +27,8 @@ require("./metamorph");
   @name Handlebars.helpers
   @description Helpers for Handlebars templates
 */
+
+Ember.assert("Ember Handlebars requires Handlebars 1.0.beta.5 or greater", window.Handlebars && window.Handlebars.VERSION.match(/^1\.0\.beta\.[56789]$|^1\.0\.rc\.[123456789]+/));
 
 /**
   @class
@@ -39,19 +43,21 @@ require("./metamorph");
   To create an Ember.Handlebars template, call Ember.Handlebars.compile().  This will
   return a function that can be used by Ember.View for rendering.
 */
-Ember.Handlebars = Ember.create(Handlebars);
+Ember.Handlebars = objectCreate(Handlebars);
 
-Ember.Handlebars.helpers = Ember.create(Handlebars.helpers);
+Ember.Handlebars.helpers = objectCreate(Handlebars.helpers);
 
 /**
   Override the the opcode compiler and JavaScript compiler for Handlebars.
+  @private
 */
 Ember.Handlebars.Compiler = function() {};
-Ember.Handlebars.Compiler.prototype = Ember.create(Handlebars.Compiler.prototype);
+Ember.Handlebars.Compiler.prototype = objectCreate(Handlebars.Compiler.prototype);
 Ember.Handlebars.Compiler.prototype.compiler = Ember.Handlebars.Compiler;
 
+/** @private */
 Ember.Handlebars.JavaScriptCompiler = function() {};
-Ember.Handlebars.JavaScriptCompiler.prototype = Ember.create(Handlebars.JavaScriptCompiler.prototype);
+Ember.Handlebars.JavaScriptCompiler.prototype = objectCreate(Handlebars.JavaScriptCompiler.prototype);
 Ember.Handlebars.JavaScriptCompiler.prototype.compiler = Ember.Handlebars.JavaScriptCompiler;
 Ember.Handlebars.JavaScriptCompiler.prototype.namespace = "Ember.Handlebars";
 
@@ -87,9 +93,9 @@ Ember.Handlebars.Compiler.prototype.mustache = function(mustache) {
     // Update the mustache node to include a hash value indicating whether the original node
     // was escaped. This will allow us to properly escape values when the underlying value
     // changes and we need to re-render the value.
-    if(mustache.escaped) {
+    if(!mustache.escaped) {
       mustache.hash = mustache.hash || new Handlebars.AST.HashNode([]);
-      mustache.hash.pairs.push(["escaped", new Handlebars.AST.StringNode("true")]);
+      mustache.hash.pairs.push(["unescaped", new Handlebars.AST.StringNode("true")]);
     }
     mustache = new Handlebars.AST.MustacheNode([id].concat([mustache.id]), mustache.hash, !mustache.escaped);
     return Handlebars.Compiler.prototype.mustache.call(this, mustache);
@@ -104,7 +110,20 @@ Ember.Handlebars.Compiler.prototype.mustache = function(mustache) {
 */
 Ember.Handlebars.precompile = function(string) {
   var ast = Handlebars.parse(string);
-  var options = { data: true, stringParams: true };
+
+  var options = {
+    knownHelpers: {
+      action: true,
+      unbound: true,
+      bindAttr: true,
+      template: true,
+      view: true,
+      _triageMustache: true
+    },
+    data: true,
+    stringParams: true
+  };
+
   var environment = new Ember.Handlebars.Compiler().compile(ast, options);
   return new Ember.Handlebars.JavaScriptCompiler().compile(environment, options, undefined, true);
 };
@@ -153,7 +172,7 @@ var normalizePath = Ember.Handlebars.normalizePath = function(root, path, data) 
     } else {
       // Strip the keyword from the path and look up
       // the remainder from the newly found root.
-      path = path.substr(keyword.length);
+      path = path.substr(keyword.length+1);
     }
   }
 
@@ -180,10 +199,10 @@ Ember.Handlebars.getPath = function(root, path, options) {
   root = normalizedPath.root;
   path = normalizedPath.path;
 
-  value = Ember.getPath(root, path);
+  value = Ember.get(root, path);
 
   if (value === undefined && root !== window && Ember.isGlobalPath(path)) {
-    value = Ember.getPath(window, path);
+    value = Ember.get(window, path);
   }
   return value;
 };
@@ -240,7 +259,7 @@ if (Ember.EXTEND_PROTOTYPES) {
 
 (function() {
 /*jshint newcap:false*/
-var set = Ember.set, get = Ember.get, getPath = Ember.getPath;
+var set = Ember.set, get = Ember.get;
 
 var DOMManager = {
   remove: function(view) {
@@ -327,7 +346,7 @@ Ember._MetamorphView = Ember.View.extend(Ember._Metamorph);
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -458,7 +477,7 @@ Ember._HandlebarsBoundView = Ember._MetamorphView.extend({
     true, the `displayTemplate` function will be rendered to DOM. Otherwise,
     `inverseTemplate`, if specified, will be rendered.
 
-    For example, if this Ember._BindableSpan represented the {{#with foo}}
+    For example, if this Ember._HandlebarsBoundView represented the {{#with foo}}
     helper, it would look up the `foo` property of its context, and
     `shouldDisplayFunc` would always return true. The object found by looking
     up `foo` would be passed to `displayTemplate`.
@@ -488,12 +507,12 @@ Ember._HandlebarsBoundView = Ember._MetamorphView.extend({
       // If we are preserving the context (for example, if this
       // is an #if block, call the template with the same object.
       if (preserveContext) {
-        set(this, '_templateContext', context);
+        set(this, '_context', context);
       } else {
       // Otherwise, determine if this is a block bind or not.
       // If so, pass the specified object to the template
         if (displayTemplate) {
-          set(this, '_templateContext', result);
+          set(this, '_context', result);
         } else {
         // This is not a bind block, just push the result of the
         // expression to the render context and return.
@@ -512,9 +531,9 @@ Ember._HandlebarsBoundView = Ember._MetamorphView.extend({
       set(this, 'template', inverseTemplate);
 
       if (preserveContext) {
-        set(this, '_templateContext', context);
+        set(this, '_context', context);
       } else {
-        set(this, '_templateContext', result);
+        set(this, '_context', result);
       }
     } else {
       set(this, 'template', function() { return ''; });
@@ -530,20 +549,20 @@ Ember._HandlebarsBoundView = Ember._MetamorphView.extend({
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt;
 var getPath = Ember.Handlebars.getPath, normalizePath = Ember.Handlebars.normalizePath;
-var forEach = Ember.ArrayUtils.forEach;
+var forEach = Ember.ArrayPolyfills.forEach;
 
 var EmberHandlebars = Ember.Handlebars, helpers = EmberHandlebars.helpers;
 
 // Binds a property into the DOM. This will create a hook in DOM that the
 // KVO system will look for and update if the property changes.
 /** @private */
-var bind = function(property, options, preserveContext, shouldDisplay, valueNormalizer) {
+function bind(property, options, preserveContext, shouldDisplay, valueNormalizer) {
   var data = options.data,
       fn = options.fn,
       inverse = options.inverse,
@@ -570,7 +589,7 @@ var bind = function(property, options, preserveContext, shouldDisplay, valueNorm
       path: path,
       pathRoot: pathRoot,
       previousContext: currentContext,
-      isEscaped: options.hash.escaped,
+      isEscaped: !options.hash.unescaped,
       templateData: options.data
     });
 
@@ -582,7 +601,7 @@ var bind = function(property, options, preserveContext, shouldDisplay, valueNorm
     };
 
     // Observes the given property on the context and
-    // tells the Ember._BindableSpan to re-render. If property
+    // tells the Ember._HandlebarsBoundView to re-render. If property
     // is an empty string, we are printing the current context
     // object ({{this}}) so updating it is not our responsibility.
     if (path !== '') {
@@ -593,7 +612,7 @@ var bind = function(property, options, preserveContext, shouldDisplay, valueNorm
     // be done with it.
     data.buffer.push(getPath(pathRoot, path, options));
   }
-};
+}
 
 /**
   '_triageMustache' is used internally select between a binding and helper for
@@ -684,7 +703,7 @@ EmberHandlebars.registerHelper('boundIf', function(property, fn) {
 */
 EmberHandlebars.registerHelper('with', function(context, options) {
   if (arguments.length === 4) {
-    var keywordName, path;
+    var keywordName, path, rootPath, normalized;
 
     Ember.assert("If you pass more than one argument to the with helper, it must be in the form #with foo as bar", arguments[1] === "as");
     options = arguments[3];
@@ -693,11 +712,22 @@ EmberHandlebars.registerHelper('with', function(context, options) {
 
     Ember.assert("You must pass a block to the with helper", options.fn && options.fn !== Handlebars.VM.noop);
 
-    // This is a workaround for the fact that you cannot bind separate objects
-    // together. When we implement that functionality, we should use it here.
-    var contextKey = Ember.$.expando + Ember.guidFor(this);
-    options.data.keywords[contextKey] = this;
-    Ember.bind(options.data.keywords, keywordName, contextKey + '.' + path);
+    if (Ember.isGlobalPath(path)) {
+      Ember.bind(options.data.keywords, keywordName, path);
+    } else {
+      normalized = normalizePath(this, path, options.data);
+      path = normalized.path;
+      rootPath = normalized.root;
+
+      // This is a workaround for the fact that you cannot bind separate objects
+      // together. When we implement that functionality, we should use it here.
+      var contextKey = Ember.$.expando + Ember.guidFor(rootPath);
+      options.data.keywords[contextKey] = rootPath;
+
+      // if the path is '' ("this"), just bind directly to the current context
+      var contextPath = path ? contextKey + '.' + path : contextKey;
+      Ember.bind(options.data.keywords, keywordName, contextPath);
+    }
 
     return bind.call(this, path, options.fn, true, function(result) {
       return !Ember.none(result);
@@ -778,7 +808,7 @@ EmberHandlebars.registerHelper('bindAttr', function(options) {
 
   // For each attribute passed, create an observer and emit the
   // current value of the property as an attribute.
-  forEach(attrKeys, function(attr) {
+  forEach.call(attrKeys, function(attr) {
     var path = attrs[attr],
         pathRoot, normalized;
 
@@ -875,38 +905,24 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
   // Helper method to retrieve the property from the context and
   // determine which class string to return, based on whether it is
   // a Boolean or not.
-  var classStringForPath = function(root, path, className, options) {
-    var val = path !== '' ? getPath(root, path, options) : true;
+  var classStringForPath = function(root, parsedPath, options) {
+    var val,
+        path = parsedPath.path;
 
-    // If the value is truthy and we're using the colon syntax,
-    // we should return the className directly
-    if (!!val && className) {
-      return className;
-
-    // If value is a Boolean and true, return the dasherized property
-    // name.
-    } else if (val === true) {
-      // Normalize property path to be suitable for use
-      // as a class name. For exaple, content.foo.barBaz
-      // becomes bar-baz.
-      var parts = path.split('.');
-      return Ember.String.dasherize(parts[parts.length-1]);
-
-    // If the value is not false, undefined, or null, return the current
-    // value of the property.
-    } else if (val !== false && val !== undefined && val !== null) {
-      return val;
-
-    // Nothing to display. Return null so that the old class is removed
-    // but no new class is added.
+    if (path === 'this') {
+      val = root;
+    } else if (path === '') {
+      val = true;
     } else {
-      return null;
+      val = getPath(root, path, options);
     }
+
+    return Ember.View._classStringForValue(path, val, parsedPath.className, parsedPath.falsyClassName);
   };
 
   // For each property passed, loop through and setup
   // an observer.
-  forEach(classBindings.split(' '), function(binding) {
+  forEach.call(classBindings.split(' '), function(binding) {
 
     // Variable in which the old class value is saved. The observer function
     // closes over this variable, so it knows which string to remove when
@@ -915,13 +931,12 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
 
     var observer, invoker;
 
-    var split = binding.split(':'),
-        path = split[0],
-        className = split[1],
+    var parsedPath = Ember.View._parsePropertyPath(binding),
+        path = parsedPath.path,
         pathRoot = context,
         normalized;
 
-    if (path !== '') {
+    if (path !== '' && path !== 'this') {
       normalized = normalizePath(context, path, options.data);
 
       pathRoot = normalized.root;
@@ -933,7 +948,7 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
     /** @private */
     observer = function() {
       // Get the current value of the property
-      newClass = classStringForPath(pathRoot, path, className, options);
+      newClass = classStringForPath(pathRoot, parsedPath, options);
       elem = bindAttrId ? view.$("[data-bindattr-" + bindAttrId + "='" + bindAttrId + "']") : view.$();
 
       // If we can't find the element anymore, a parent template has been
@@ -962,13 +977,13 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
       Ember.run.once(observer);
     };
 
-    if (path !== '') {
+    if (path !== '' && path !== 'this') {
       Ember.addObserver(pathRoot, path, invoker);
     }
 
     // We've already setup the observer; now we just need to figure out the
     // correct behavior right now on the first pass through.
-    value = classStringForPath(pathRoot, path, className, options);
+    value = classStringForPath(pathRoot, parsedPath, options);
 
     if (value) {
       ret.push(value);
@@ -989,7 +1004,7 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -997,14 +1012,14 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
 
 // TODO: Don't require the entire module
 var get = Ember.get, set = Ember.set;
-var indexOf = Ember.ArrayUtils.indexOf;
 var PARENT_VIEW_PATH = /^parentView\./;
 var EmberHandlebars = Ember.Handlebars;
+var VIEW_PRESERVES_CONTEXT = Ember.VIEW_PRESERVES_CONTEXT;
 
 /** @private */
 EmberHandlebars.ViewHelper = Ember.Object.create({
 
-  viewClassFromHTMLOptions: function(viewClass, options, thisContext) {
+  propertiesFromHTMLOptions: function(options, thisContext) {
     var hash = options.hash, data = options.data;
     var extensions = {},
         classes = hash['class'],
@@ -1027,7 +1042,8 @@ EmberHandlebars.ViewHelper = Ember.Object.create({
     }
 
     if (hash.classNameBindings) {
-      extensions.classNameBindings = hash.classNameBindings.split(' ');
+      if (extensions.classNameBindings === undefined) extensions.classNameBindings = [];
+      extensions.classNameBindings = extensions.classNameBindings.concat(hash.classNameBindings.split(' '));
       dup = true;
     }
 
@@ -1044,27 +1060,37 @@ EmberHandlebars.ViewHelper = Ember.Object.create({
       delete hash.classBinding;
     }
 
-    // Look for bindings passed to the helper and, if they are
-    // local, make them relative to the current context instead of the
-    // view.
-    var path, normalized;
+    // Set the proper context for all bindings passed to the helper. This applies to regular attribute bindings
+    // as well as class name bindings. If the bindings are local, make them relative to the current context
+    // instead of the view.
+    var path;
 
+    // Evaluate the context of regular attribute bindings:
     for (var prop in hash) {
       if (!hash.hasOwnProperty(prop)) { continue; }
 
       // Test if the property ends in "Binding"
-      if (Ember.IS_BINDING.test(prop)) {
-        path = hash[prop];
+      if (Ember.IS_BINDING.test(prop) && typeof hash[prop] === 'string') {
+        path = this.contextualizeBindingPath(hash[prop], data);
+        if (path) { hash[prop] = path; }
+      }
+    }
 
-        normalized = Ember.Handlebars.normalizePath(null, path, data);
-        if (normalized.isKeyword) {
-          hash[prop] = 'templateData.keywords.'+path;
-        } else if (!Ember.isGlobalPath(path)) {
-          if (path === 'this') {
-            hash[prop] = 'bindingContext';
-          } else {
-            hash[prop] = 'bindingContext.'+path;
-          }
+    // Evaluate the context of class name bindings:
+    if (extensions.classNameBindings) {
+      for (var b in extensions.classNameBindings) {
+        var full = extensions.classNameBindings[b];
+        if (typeof full === 'string') {
+          // Contextualize the path of classNameBinding so this:
+          //
+          //     classNameBinding="isGreen:green"
+          //
+          // is converted to this:
+          //
+          //     classNameBinding="bindingContext.isGreen:green"
+          var parsedPath = Ember.View._parsePropertyPath(full);
+          path = this.contextualizeBindingPath(parsedPath.path, data);
+          if (path) { extensions.classNameBindings[b] = path + parsedPath.classNames; }
         }
       }
     }
@@ -1073,7 +1099,24 @@ EmberHandlebars.ViewHelper = Ember.Object.create({
     // for the bindings set up above.
     extensions.bindingContext = thisContext;
 
-    return viewClass.extend(hash, extensions);
+    return Ember.$.extend(hash, extensions);
+  },
+
+  // Transform bindings from the current context to a context that can be evaluated within the view.
+  // Returns null if the path shouldn't be changed.
+  //
+  // TODO: consider the addition of a prefix that would allow this method to return `path`.
+  contextualizeBindingPath: function(path, data) {
+    var normalized = Ember.Handlebars.normalizePath(null, path, data);
+    if (normalized.isKeyword) {
+      return 'templateData.keywords.' + path;
+    } else if (Ember.isGlobalPath(path)) {
+      return null;
+    } else if (path === 'this') {
+      return 'bindingContext';
+    } else {
+      return 'bindingContext.' + path;
+    }
   },
 
   helper: function(thisContext, path, options) {
@@ -1093,15 +1136,19 @@ EmberHandlebars.ViewHelper = Ember.Object.create({
 
     Ember.assert(Ember.String.fmt('You must pass a view class to the #view helper, not %@ (%@)', [path, newView]), Ember.View.detect(newView));
 
-    newView = this.viewClassFromHTMLOptions(newView, options, thisContext);
+    var viewOptions = this.propertiesFromHTMLOptions(options, thisContext);
     var currentView = data.view;
-    var viewOptions = {
-      templateData: options.data
-    };
+    viewOptions.templateData = options.data;
 
     if (fn) {
       Ember.assert("You cannot provide a template block if you also specified a templateName", !get(viewOptions, 'templateName') && !get(newView.proto(), 'templateName'));
       viewOptions.template = fn;
+    }
+
+    // We only want to override the `_context` computed property if there is
+    // no specified controller. See View#_context for more information.
+    if (VIEW_PRESERVES_CONTEXT && !newView.proto().controller && !newView.proto().controllerBinding && !viewOptions.controller && !viewOptions.controllerBinding) {
+      viewOptions._context = thisContext;
     }
 
     currentView.appendChild(newView, viewOptions);
@@ -1271,7 +1318,7 @@ EmberHandlebars.registerHelper('view', function(path, options) {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -1404,7 +1451,7 @@ Ember.Handlebars.registerHelper('collection', function(path, options) {
   // Otherwise, just default to the standard class.
   var collectionClass;
   collectionClass = path ? getPath(this, path, options) : Ember.CollectionView;
-  Ember.assert(fmt("%@ #collection: Could not find %@", data.view, path), !!collectionClass);
+  Ember.assert(fmt("%@ #collection: Could not find collection class %@", [data.view, path]), !!collectionClass);
 
   var hash = options.hash, itemHash = {}, match;
 
@@ -1413,7 +1460,7 @@ Ember.Handlebars.registerHelper('collection', function(path, options) {
   var collectionPrototype = collectionClass.proto();
   delete hash.itemViewClass;
   itemViewClass = itemViewPath ? getPath(collectionPrototype, itemViewPath, options) : collectionPrototype.itemViewClass;
-  Ember.assert(fmt("%@ #collection: Could not find %@", data.view, itemViewPath), !!itemViewClass);
+  Ember.assert(fmt("%@ #collection: Could not find itemViewClass %@", [data.view, itemViewPath]), !!itemViewClass);
 
   // Go through options passed to the {{collection}} helper and extract options
   // that configure item views instead of the collection itself.
@@ -1438,23 +1485,27 @@ Ember.Handlebars.registerHelper('collection', function(path, options) {
     delete options.fn;
   }
 
+  var emptyViewClass;
   if (inverse && inverse !== Handlebars.VM.noop) {
-    var emptyViewClass = get(collectionPrototype, 'emptyViewClass');
-
-    hash.emptyView = emptyViewClass.extend({
-      template: inverse,
-      tagName: itemHash.tagName
+    emptyViewClass = get(collectionPrototype, 'emptyViewClass');
+    emptyViewClass = emptyViewClass.extend({
+          template: inverse,
+          tagName: itemHash.tagName
     });
+  } else if (hash.emptyViewClass) {
+    emptyViewClass = getPath(this, hash.emptyViewClass, options);
   }
+  hash.emptyView = emptyViewClass;
 
   if (hash.eachHelper === 'each') {
-    itemHash._templateContext = Ember.computed(function() {
+    itemHash._context = Ember.computed(function() {
       return get(this, 'content');
     }).property('content');
     delete hash.eachHelper;
   }
 
-  hash.itemViewClass = Ember.Handlebars.ViewHelper.viewClassFromHTMLOptions(itemViewClass, { data: data, hash: itemHash }, this);
+  var viewOptions = Ember.Handlebars.ViewHelper.propertiesFromHTMLOptions({ data: data, hash: itemHash }, this);
+  hash.itemViewClass = itemViewClass.extend(viewOptions);
 
   return Ember.Handlebars.helpers.view.call(this, collectionClass, options);
 });
@@ -1468,7 +1519,7 @@ Ember.Handlebars.registerHelper('collection', function(path, options) {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -1496,13 +1547,13 @@ Ember.Handlebars.registerHelper('unbound', function(property, fn) {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 
 /*jshint debug:true*/
-var getPath = Ember.getPath;
+var getPath = Ember.Handlebars.getPath, normalizePath = Ember.Handlebars.normalizePath;
 
 /**
   `log` allows you to output the value of a value in the current rendering
@@ -1513,9 +1564,13 @@ var getPath = Ember.getPath;
   @name Handlebars.helpers.log
   @param {String} property
 */
-Ember.Handlebars.registerHelper('log', function(property, fn) {
-  var context = (fn.contexts && fn.contexts[0]) || this;
-  Ember.Logger.log(getPath(context, property));
+Ember.Handlebars.registerHelper('log', function(property, options) {
+  var context = (options.contexts && options.contexts[0]) || this,
+      normalized = normalizePath(context, property, options.data),
+      pathRoot = normalized.root,
+      path = normalized.path,
+      value = (path === 'this') ? pathRoot : getPath(pathRoot, path, options);
+  Ember.Logger.log(value);
 });
 
 /**
@@ -1576,6 +1631,7 @@ Ember.Handlebars.registerHelper('each', function(path, options) {
 
     options = arguments[3];
     path = arguments[2];
+    if (path === '') { path = "this"; }
 
     options.hash.keyword = keywordName;
   } else {
@@ -1637,31 +1693,55 @@ Ember.Handlebars.registerHelper('template', function(name, options) {
 
 
 (function() {
-var EmberHandlebars = Ember.Handlebars, getPath = EmberHandlebars.getPath, get = Ember.get;
+var EmberHandlebars = Ember.Handlebars,
+    getPath = EmberHandlebars.getPath,
+    get = Ember.get,
+    a_slice = Array.prototype.slice;
 
 var ActionHelper = EmberHandlebars.ActionHelper = {
   registeredActions: {}
 };
 
-ActionHelper.registerAction = function(actionName, eventName, target, view, context) {
+ActionHelper.registerAction = function(actionName, options) {
   var actionId = (++Ember.$.uuid).toString();
 
   ActionHelper.registeredActions[actionId] = {
-    eventName: eventName,
+    eventName: options.eventName,
     handler: function(event) {
-      event.view = view;
-      event.context = context;
+      var modifier = event.shiftKey || event.metaKey || event.altKey || event.ctrlKey,
+          secondaryClick = event.which > 1, // IE9 may return undefined
+          nonStandard = modifier || secondaryClick;
+
+      if (options.link && nonStandard) {
+        // Allow the browser to handle special link clicks normally
+        return;
+      }
+
+      event.preventDefault();
+
+      event.view = options.view;
+
+      if (options.hasOwnProperty('context')) {
+        event.context = options.context;
+      }
+
+      if (options.hasOwnProperty('contexts')) {
+        event.contexts = options.contexts;
+      }
+
+      var target = options.target;
 
       // Check for StateManager (or compatible object)
       if (target.isState && typeof target.send === 'function') {
         return target.send(actionName, event);
       } else {
+        Ember.assert(Ember.String.fmt('Target %@ does not have action %@', [target, actionName]), target[actionName]);
         return target[actionName].call(target, event);
       }
     }
   };
 
-  view.on('willRerender', function() {
+  options.view.on('willRerender', function() {
     delete ActionHelper.registeredActions[actionId];
   });
 
@@ -1670,14 +1750,16 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
 
 /**
   The `{{action}}` helper registers an HTML element within a template for
-  DOM event handling.  User interaction with that element will call the method
-  on the template's associated `Ember.View` instance that has the same name
-  as the first provided argument to `{{action}}`:
+  DOM event handling and forwards that interaction to the Application's router,
+  the template's `Ember.View` instance, or supplied `target` option (see 'Specifiying a Target').
+  
+  User interaction with that element will invoke the supplied action name on
+  the appropriate target.
 
   Given the following Handlebars template on the page
 
       <script type="text/x-handlebars" data-template-name='a-template'>
-        <div {{action "anActionName"}}>
+        <div {{action anActionName}}>
           click me
         </div>
       </script>
@@ -1687,10 +1769,10 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
       AView = Ember.View.extend({
         templateName; 'a-template',
         anActionName: function(event){}
-      })
+      });
 
-      aView = AView.create()
-      aView.appendTo('body')
+      aView = AView.create();
+      aView.appendTo('body');
 
   Will results in the following rendered HTML
 
@@ -1700,47 +1782,95 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
         </div>
       </div>
 
-  Clicking "click me" will trigger the `anActionName` method of the `aView` object with a 
-  `jQuery.Event` object as its argument. The `jQuery.Event` object will be extended to include
-  a `view` property that is set to the original view interacted with (in this case the `aView` object).
+  Clicking "click me" will trigger the `anActionName` method of the `aView`
+  object with a  `jQuery.Event` object as its argument. The `jQuery.Event`
+  object will be extended to include a `view` property that is set to the
+  original view interacted with (in this case the `aView` object).
 
+  ### Event Propagation
 
-  ### Specifying an Action Target
-  A `target` option can be provided to change which object will receive the method call. This option must be
-  a string representing a path to an object:
+  Events triggered through the action helper will automatically have
+  `.preventDefault()` called on them. You do not need to do so in your event
+  handlers. To stop propagation of the event, simply return `false` from your
+  handler.
+
+  If you need the default handler to trigger you should either register your
+  own event handler, or use event methods on your view class. See Ember.View
+  'Responding to Browser Events' for more information.
+  
+  ### Specifying DOM event type
+
+  By default the `{{action}}` helper registers for DOM `click` events. You can
+  supply an `on` option to the helper to specify a different DOM event name:
 
       <script type="text/x-handlebars" data-template-name='a-template'>
-        <div {{action "anActionName" target="MyApplication.someObject"}}>
+        <div {{action anActionName on="doubleClick"}}>
           click me
         </div>
       </script>
 
-  Clicking "click me" in the rendered HTML of the above template will trigger the 
-  `anActionName` method of the object at `MyApplication.someObject`.  The first argument 
-  to this method will be a `jQuery.Event` extended to include a `view` property that is 
-  set to the original view interacted with.
+  See Ember.View 'Responding to Browser Events' for a list of
+  acceptable DOM event names.
 
-  A path relative to the template's `Ember.View` instance can also be used as a target:
+  Because `{{action}}` depends on Ember's event dispatch system it will only
+  function if an `Ember.EventDispatcher` instance is available. An
+  `Ember.EventDispatcher` instance will be created when a new
+  `Ember.Application` is created. Having an instance of `Ember.Application`
+  will satisfy this requirement.
+  
+  
+  ### Specifying a Target
+  There are several possible target objects for `{{action}}` helpers:
+  
+  In a typical `Ember.Router`-backed Application where views are managed
+  through use of the `{{outlet}}` helper, actions will be forwarded to the
+  current state of the Applications's Router. See Ember.Router 'Responding
+  to User-initiated Events' for more information.
+  
+  If you manaully set the `target` property on the controller of a template's
+  `Ember.View` instance, the specifed `controller.target` will become the target
+  for any actions. Likely custom values for a controller's `target` are the
+  controller itself or a StateManager other than the Application's Router.
+  
+  If the templates's view lacks a controller property the view itself is the target.
+  
+  Finally, a `target` option can be provided to the helper to change which object
+  will receive the method call. This option must be a string representing a
+  path to an object:
 
       <script type="text/x-handlebars" data-template-name='a-template'>
-        <div {{action "anActionName" target="parentView"}}>
+        <div {{action anActionName target="MyApplication.someObject"}}>
           click me
         </div>
       </script>
 
-  Clicking "click me" in the rendered HTML of the above template will trigger the 
-  `anActionName` method of the view's parent view.
+  Clicking "click me" in the rendered HTML of the above template will trigger
+  the  `anActionName` method of the object at `MyApplication.someObject`.
+  The first argument to this method will be a `jQuery.Event` extended to
+  include a `view` property that is set to the original view interacted with.
 
-  The `{{action}}` helper is `Ember.StateManager` aware. If the target of
-  the action is an `Ember.StateManager` instance `{{action}}` will use the `send`
-  functionality of StateManagers. The documentation for `Ember.StateManager` has additional
-  information about this use.
-
-  If an action's target does not implement a method that matches the supplied action name
-  an error will be thrown.
+  A path relative to the template's `Ember.View` instance can also be used as
+  a target:
 
       <script type="text/x-handlebars" data-template-name='a-template'>
-        <div {{action "aMethodNameThatIsMissing"}}>
+        <div {{action anActionName target="parentView"}}>
+          click me
+        </div>
+      </script>
+
+  Clicking "click me" in the rendered HTML of the above template will trigger
+  the `anActionName` method of the view's parent view.
+
+  The `{{action}}` helper is `Ember.StateManager` aware. If the target of the
+  action is an `Ember.StateManager` instance `{{action}}` will use the `send`
+  functionality of StateManagers. The documentation for `Ember.StateManager`
+  has additional information about this use.
+
+  If an action's target does not implement a method that matches the supplied
+  action name an error will be thrown.
+
+      <script type="text/x-handlebars" data-template-name='a-template'>
+        <div {{action aMethodNameThatIsMissing}}>
           click me
         </div>
       </script>
@@ -1751,39 +1881,23 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
         templateName; 'a-template',
         // note: no method 'aMethodNameThatIsMissing'
         anActionName: function(event){}
-      })
+      });
 
-      aView = AView.create()
-      aView.appendTo('body')
+      aView = AView.create();
+      aView.appendTo('body');
 
-  Will throw `Uncaught TypeError: Cannot call method 'call' of undefined` when "click me" is clicked.
-
-
-  ### Specifying DOM event type
-  By default the `{{action}}` helper registers for DOM `click` events. You can supply an
-  `on` option to the helper to specify a different DOM event name:
-
-      <script type="text/x-handlebars" data-template-name='a-template'>
-        <div {{action "aMethodNameThatIsMissing" on="doubleClick"}}>
-          click me
-        </div>
-      </script>
-
-  See `Ember.EventDispatcher` for a list of acceptable DOM event names.
-
-  Because `{{action}}` depends on Ember's event dispatch system it will only function if
-  an `Ember.EventDispatcher` instance is available. An `Ember.EventDispatcher` instance 
-  will be created when a new `Ember.Application` is created. Having an instance of
-  `Ember.Application` will satisfy this requirement.
-
+  Will throw `Uncaught TypeError: Cannot call method 'call' of undefined` when
+  "click me" is clicked.
+  
   ### Specifying a context
-  By default the `{{action}}` helper passes the current Handlebars context along in the
-  `jQuery.Event` object. You may specify an alternative object to pass as the context by
-  providing a property path:
+
+  By default the `{{action}}` helper passes the current Handlebars context
+  along in the `jQuery.Event` object. You may specify an alternate object to
+  pass as the context by providing a property path:
 
       <script type="text/x-handlebars" data-template-name='a-template'>
         {{#each person in people}}
-          <div {{action "edit" context="person"}}>
+          <div {{action edit person}}>
             click me
           </div>
         {{/each}}
@@ -1791,15 +1905,23 @@ ActionHelper.registerAction = function(actionName, eventName, target, view, cont
 
   @name Handlebars.helpers.action
   @param {String} actionName
+  @param {Object...} contexts
   @param {Hash} options
 */
-EmberHandlebars.registerHelper('action', function(actionName, options) {
-  var hash = options.hash || {},
-      eventName = hash.on || "click",
-      view = options.data.view,
-      target, context, controller;
+EmberHandlebars.registerHelper('action', function(actionName) {
+  var options = arguments[arguments.length - 1],
+      contexts = a_slice.call(arguments, 1, -1);
 
-  if (view.isVirtual) { view = view.get('parentView'); }
+  var hash = options.hash,
+      view = options.data.view,
+      target, controller, link;
+
+  // create a hash to pass along to registerAction
+  var action = {
+    eventName: hash.on || "click"
+  };
+
+  action.view = view = get(view, 'concreteView');
 
   if (hash.target) {
     target = getPath(this, hash.target, options);
@@ -1807,12 +1929,27 @@ EmberHandlebars.registerHelper('action', function(actionName, options) {
     target = get(controller, 'target');
   }
 
-  target = target || view;
+  action.target = target = target || view;
 
-  context = hash.context ? getPath(this, hash.context, options) : options.contexts[0];
+  if (contexts.length) {
+    action.contexts = contexts = Ember.EnumerableUtils.map(contexts, function(context) {
+      return getPath(this, context, options);
+    }, this);
+    action.context = contexts[0];
+  }
 
-  var actionId = ActionHelper.registerAction(actionName, eventName, target, view, context);
-  return new EmberHandlebars.SafeString('data-ember-action="' + actionId + '"');
+  var output = [], url;
+
+  if (hash.href && target.urlForEvent) {
+    url = target.urlForEvent.apply(target, [actionName].concat(contexts));
+    output.push('href="' + url + '"');
+    action.link = true;
+  }
+
+  var actionId = ActionHelper.registerAction(actionName, action);
+  output.push('data-ember-action="' + actionId + '"');
+
+  return new EmberHandlebars.SafeString(output.join(" "));
 });
 
 })();
@@ -1886,8 +2023,51 @@ Ember.Handlebars.registerHelper('yield', function(options) {
 
 
 (function() {
+/**
+  The `outlet` helper allows you to specify that the current
+  view's controller will fill in the view for a given area.
+
+      {{outlet}}
+
+  By default, when the the current controller's `view`
+  property changes, the outlet will replace its current
+  view with the new view.
+
+      controller.set('view', someView);
+
+  You can also specify a particular name, other than view:
+
+      {{outlet masterView}}
+      {{outlet detailView}}
+
+  Then, you can control several outlets from a single
+  controller:
+
+      controller.set('masterView', postsView);
+      controller.set('detailView', postView);
+
+  @name Handlebars.helpers.outlet
+  @param {String} property the property on the controller
+    that holds the view for this outlet
+*/
+Ember.Handlebars.registerHelper('outlet', function(property, options) {
+  if (property && property.data && property.data.isRenderData) {
+    options = property;
+    property = 'view';
+  }
+
+  options.hash.currentViewBinding = "controller." + property;
+
+  return Ember.Handlebars.helpers.view.call(this, Ember.ContainerView, options);
+});
+
+})();
+
+
+
+(function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -1898,7 +2078,7 @@ Ember.Handlebars.registerHelper('yield', function(options) {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -1909,7 +2089,7 @@ Ember.Handlebars.registerHelper('yield', function(options) {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -1918,22 +2098,8 @@ var set = Ember.set, get = Ember.get;
 /**
   @class
 
-  Creates an HTML input view in one of two formats.
-
-  If a `title` property or binding is provided the input will be wrapped in
-  a `div` and `label` tag. View properties like `classNames` will be applied to
-  the outermost `div`. This behavior is deprecated and will issue a warning in development.
-
-
-      {{view Ember.Checkbox classNames="applicaton-specific-checkbox" title="Some title"}}
-
-
-      <div id="ember1" class="ember-view ember-checkbox applicaton-specific-checkbox">
-        <label><input type="checkbox" />Some title</label>
-      </div>
-
-  If `title` isn't provided the view will render as an input element of the 'checkbox' type and HTML
-  related properties will be applied directly to the input.
+  Creates an HTML input of type 'checkbox' with HTML related properties 
+  applied directly to the input.
 
       {{view Ember.Checkbox classNames="applicaton-specific-checkbox"}}
 
@@ -1952,52 +2118,33 @@ var set = Ember.set, get = Ember.get;
   via the mouse, keyboard, or touch.  Updating the value of the checkbox via jQuery will
   result in the checked value of the object and its element losing synchronization.
 
+  ## Layout and LayoutName properties
+  Because HTML `input` elements are self closing `layout` and `layoutName` properties will
+  not be applied. See `Ember.View`'s layout section for more information.
+
+  @extends Ember.View
 */
 Ember.Checkbox = Ember.View.extend({
   classNames: ['ember-checkbox'],
 
   tagName: 'input',
 
-  attributeBindings: ['type', 'checked', 'disabled'],
+  attributeBindings: ['type', 'checked', 'disabled', 'tabindex'],
 
   type: "checkbox",
   checked: false,
   disabled: false,
 
-  /** @deprecated */
-  title: null,
-
-  value: Ember.computed(function(propName, value){
-    Ember.deprecate("Ember.Checkbox's 'value' property has been renamed to 'checked' to match the html element attribute name");
-    if (value !== undefined) {
-      return set(this, 'checked', value);
-    } else {
-      return get(this, 'checked');
-    }
-  }).property('checked').volatile(),
-
-  change: function() {
-    Ember.run.once(this, this._updateElementValue);
-    // returning false will cause IE to not change checkbox state
+  init: function() {
+    this._super();
+    this.on("change", this, this._updateElementValue);
   },
 
   /**
     @private
   */
   _updateElementValue: function() {
-    var input = get(this, 'title') ? this.$('input:checkbox') : this.$();
-    set(this, 'checked', input.prop('checked'));
-  },
-
-  init: function() {
-    if (get(this, 'title') || get(this, 'titleBinding')) {
-      Ember.deprecate("Automatically surrounding Ember.Checkbox inputs with a label by providing a 'title' property is deprecated");
-      this.tagName = undefined;
-      this.attributeBindings = [];
-      this.defaultTemplate = Ember.Handlebars.compile('<label><input type="checkbox" {{bindAttr checked="checked" disabled="disabled"}}>{{title}}</label>');
-    }
-
-    this._super();
+    set(this, 'checked', this.$().prop('checked'));
   }
 });
 
@@ -2007,7 +2154,7 @@ Ember.Checkbox = Ember.View.extend({
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2019,7 +2166,7 @@ Ember.TextSupport = Ember.Mixin.create(
 
   value: "",
 
-  attributeBindings: ['placeholder', 'disabled', 'maxlength'],
+  attributeBindings: ['placeholder', 'disabled', 'maxlength', 'tabindex'],
   placeholder: null,
   disabled: false,
   maxlength: null,
@@ -2027,16 +2174,12 @@ Ember.TextSupport = Ember.Mixin.create(
   insertNewline: Ember.K,
   cancel: Ember.K,
 
-  focusOut: function(event) {
-    this._elementValueDidChange();
-  },
-
-  change: function(event) {
-    this._elementValueDidChange();
-  },
-
-  keyUp: function(event) {
-    this.interpretKeyEvents(event);
+  /** @private */
+  init: function() {
+    this._super();
+    this.on("focusOut", this, this._elementValueDidChange);
+    this.on("change", this, this._elementValueDidChange);
+    this.on("keyUp", this, this.interpretKeyEvents);
   },
 
   /**
@@ -2067,7 +2210,7 @@ Ember.TextSupport.KEY_EVENTS = {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2085,6 +2228,11 @@ var get = Ember.get, set = Ember.set;
 
       {{view Ember.TextField valueBinding="firstName"}}
 
+  ## Layout and LayoutName properties
+  Because HTML `input` elements are self closing `layout` and `layoutName` properties will
+  not be applied. See `Ember.View`'s layout section for more information.
+
+  @extends Ember.View
   @extends Ember.TextSupport
 */
 Ember.TextField = Ember.View.extend(Ember.TextSupport,
@@ -2126,7 +2274,7 @@ Ember.TextField = Ember.View.extend(Ember.TextSupport,
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2140,7 +2288,7 @@ Ember.Button = Ember.View.extend(Ember.TargetActionSupport, {
 
   propagateEvents: false,
 
-  attributeBindings: ['type', 'disabled', 'href'],
+  attributeBindings: ['type', 'disabled', 'href', 'tabindex'],
 
   /** @private
     Overrides TargetActionSupport's targetObject computed
@@ -2148,7 +2296,7 @@ Ember.Button = Ember.View.extend(Ember.TargetActionSupport, {
   */
   targetObject: Ember.computed(function() {
     var target = get(this, 'target'),
-        root = get(this, 'templateContext'),
+        root = get(this, 'context'),
         data = get(this, 'templateData');
 
     if (typeof target !== 'string') { return target; }
@@ -2245,7 +2393,7 @@ Ember.Button = Ember.View.extend(Ember.TargetActionSupport, {
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2253,6 +2401,18 @@ var get = Ember.get, set = Ember.set;
 
 /**
   @class
+
+  The `Ember.TextArea` view class renders a
+  [textarea](https://developer.mozilla.org/en/HTML/Element/textarea) element.
+  It allows for binding Ember properties to the text area contents (`value`),
+  live-updating as the user inputs text.
+
+  ## Layout and LayoutName properties
+
+  Because HTML `textarea` elements do not contain inner HTML the `layout` and `layoutName` 
+  properties will not be applied. See `Ember.View`'s layout section for more information.
+
+  @extends Ember.View
   @extends Ember.TextSupport
 */
 Ember.TextArea = Ember.View.extend(Ember.TextSupport,
@@ -2266,9 +2426,15 @@ Ember.TextArea = Ember.View.extend(Ember.TextSupport,
   cols: null,
 
   _updateElementValue: Ember.observer(function() {
-    this.$().val(get(this, 'value'));
+    // We do this check so cursor position doesn't get affected in IE
+    var value = get(this, 'value'),
+        $el = this.$();
+    if ($el && value !== $el.val()) {
+      $el.val(value);
+    }
   }, 'value'),
 
+  /** @private */
   init: function() {
     this._super();
     this.on("didInsertElement", this, this._updateElementValue);
@@ -2281,14 +2447,19 @@ Ember.TextArea = Ember.View.extend(Ember.TextSupport,
 
 
 (function() {
-Ember.TabContainerView = Ember.View.extend();
+Ember.TabContainerView = Ember.View.extend({
+  init: function() {
+    Ember.deprecate("Ember.TabContainerView is deprecated and will be removed from future releases.");
+    this._super();
+  }
+});
 
 })();
 
 
 
 (function() {
-var get = Ember.get, getPath = Ember.getPath;
+var get = Ember.get;
 
 Ember.TabPaneView = Ember.View.extend({
   tabsContainer: Ember.computed(function() {
@@ -2296,8 +2467,13 @@ Ember.TabPaneView = Ember.View.extend({
   }).property().volatile(),
 
   isVisible: Ember.computed(function() {
-    return get(this, 'viewName') === getPath(this, 'tabsContainer.currentView');
-  }).property('tabsContainer.currentView').volatile()
+    return get(this, 'viewName') === get(this, 'tabsContainer.currentView');
+  }).property('tabsContainer.currentView').volatile(),
+
+  init: function() {
+    Ember.deprecate("Ember.TabPaneView is deprecated and will be removed from future releases.");
+    this._super();
+  }
 });
 
 })();
@@ -2314,6 +2490,11 @@ Ember.TabView = Ember.View.extend({
 
   mouseUp: function() {
     setPath(this, 'tabsContainer.currentView', get(this, 'value'));
+  },
+
+  init: function() {
+    Ember.deprecate("Ember.TabView is deprecated and will be removed from future releases.");
+    this._super();
   }
 });
 
@@ -2330,8 +2511,8 @@ Ember.TabView = Ember.View.extend({
 (function() {
 /*jshint eqeqeq:false */
 
-var set = Ember.set, get = Ember.get, getPath = Ember.getPath;
-var indexOf = Ember.ArrayUtils.indexOf, indexesOf = Ember.ArrayUtils.indexesOf;
+var set = Ember.set, get = Ember.get;
+var indexOf = Ember.EnumerableUtils.indexOf, indexesOf = Ember.EnumerableUtils.indexesOf;
 
 /**
   @class
@@ -2339,7 +2520,85 @@ var indexOf = Ember.ArrayUtils.indexOf, indexesOf = Ember.ArrayUtils.indexesOf;
   The Ember.Select view class renders a
   [select](https://developer.mozilla.org/en/HTML/Element/select) HTML element,
   allowing the user to choose from a list of options. The selected option(s)
-  are updated live in the `selection` property.
+  are updated live in the `selection` property, while the corresponding value
+  is updated in the `value` property.
+
+  ### Using Strings
+  The simplest version of an Ember.Select takes an array of strings for the options
+  of a select box and a valueBinding to set the value.
+
+  Example:
+
+      App.controller = Ember.Object.create({
+        selected: null,
+        content: [
+          "Yehuda",
+          "Tom"
+        ]
+      })
+
+      {{view Ember.Select
+             contentBinding="App.controller.content"
+             valueBinding="App.controller.selected"
+      }}
+
+  Would result in the following HTML:
+
+      <select class="ember-select">
+        <option value="Yehuda">Yehuda</option>
+        <option value="Tom">Tom</option>
+      </select>
+
+  Selecting Yehuda from the select box will set `App.controller.selected` to "Yehuda"
+
+  ### Using Objects
+  An Ember.Select can also take an array of JS or Ember objects.
+
+  When using objects you need to supply optionLabelPath and optionValuePath parameters
+  which will be used to get the label and value for each of the options.
+
+  Usually you will bind to either the selection or the value attribute of the select.
+
+  Use selectionBinding if you would like to set the whole object as a property on the target.
+  Use valueBinding if you would like to set just the value.
+
+  Example using selectionBinding:
+
+      App.controller = Ember.Object.create({
+        selectedPerson: null,
+        selectedPersonId: null,
+        content: [
+          Ember.Object.create({firstName: "Yehuda", id: 1}),
+          Ember.Object.create({firstName: "Tom",    id: 2})
+        ]
+      })
+
+      {{view Ember.Select
+             contentBinding="App.controller.content"
+             optionLabelPath="content.firstName"
+             optionValuePath="content.id"
+             selectionBinding="App.controller.selectedPerson"
+             prompt="Please Select"}}
+
+      <select class="ember-select">
+        <option value>Please Select</option>
+        <option value="1">Yehuda</option>
+        <option value="2">Tom</option>
+      </select>
+
+  Selecting Yehuda here will set `App.controller.selectedPerson` to
+  the Yehuda object.
+
+  Example using valueBinding:
+
+      {{view Ember.Select
+             contentBinding="App.controller.content"
+             optionLabelPath="content.firstName"
+             optionValuePath="content.id"
+             valueBinding="App.controller.selectedPersonId"
+             prompt="Please Select"}}
+
+  Selecting Yehuda in this case will set `App.controller.selectedPersonId` to 1.
 
   @extends Ember.View
 */
@@ -2347,8 +2606,9 @@ Ember.Select = Ember.View.extend(
   /** @scope Ember.Select.prototype */ {
 
   tagName: 'select',
-  defaultTemplate: Ember.Handlebars.compile('{{#if view.prompt}}<option>{{view.prompt}}</option>{{/if}}{{#each view.content}}{{view Ember.SelectOption contentBinding="this"}}{{/each}}'),
-  attributeBindings: ['multiple'],
+  classNames: ['ember-select'],
+  defaultTemplate: Ember.Handlebars.compile('{{#if view.prompt}}<option value>{{view.prompt}}</option>{{/if}}{{#each view.content}}{{view Ember.SelectOption contentBinding="this"}}{{/each}}'),
+  attributeBindings: ['multiple', 'tabindex'],
 
   /**
     The `multiple` attribute of the select element. Indicates whether multiple
@@ -2370,7 +2630,7 @@ Ember.Select = Ember.View.extend(
         content: Ember.A([
             { id: 1, firstName: 'Yehuda' },
             { id: 2, firstName: 'Tom' }
-          ])),
+          ]),
         optionLabelPath: 'content.firstName',
         optionValuePath: 'content.id'
 
@@ -2389,6 +2649,22 @@ Ember.Select = Ember.View.extend(
     @default null
   */
   selection: null,
+
+  /**
+    In single selection mode (when `multiple` is false), value can be used to get
+    the current selection's value or set the selection by it's value.
+
+    It is not currently supported in multiple selection mode.
+
+    @type String
+    @default null
+  */
+  value: Ember.computed(function(key, value) {
+    if (arguments.length === 2) { return value; }
+
+    var valuePath = get(this, 'optionValuePath').replace(/^content\.?/, '');
+    return valuePath ? get(this, 'selection.' + valuePath) : get(this, 'selection');
+  }).property('selection').cacheable(),
 
   /**
     If given, a top-most dummy option will be rendered to serve as a user
@@ -2415,7 +2691,7 @@ Ember.Select = Ember.View.extend(
   */
   optionValuePath: 'content',
 
-  change: function() {
+  _change: function() {
     if (get(this, 'multiple')) {
       this._changeMultiple();
     } else {
@@ -2437,12 +2713,29 @@ Ember.Select = Ember.View.extend(
     }
   }, 'selection'),
 
+  valueDidChange: Ember.observer(function() {
+    var content = get(this, 'content'),
+        value = get(this, 'value'),
+        valuePath = get(this, 'optionValuePath').replace(/^content\.?/, ''),
+        selectedValue = (valuePath ? get(this, 'selection.' + valuePath) : get(this, 'selection')),
+        selection;
+
+    if (value !== selectedValue) {
+      selection = content.find(function(obj) {
+        return value === (valuePath ? get(obj, valuePath) : obj);
+      });
+
+      this.set('selection', selection);
+    }
+  }, 'value'),
+
+
   _triggerChange: function() {
     var selection = get(this, 'selection');
 
     if (selection) { this.selectionDidChange(); }
 
-    this.change();
+    this._change();
   },
 
   _changeSingle: function() {
@@ -2473,13 +2766,15 @@ Ember.Select = Ember.View.extend(
   },
 
   _selectionDidChangeSingle: function() {
-    var el = this.$()[0],
-        content = get(this, 'content'),
+    var el = this.get('element');
+    if (!el) { return; }
+
+    var content = get(this, 'content'),
         selection = get(this, 'selection'),
         selectionIndex = content ? indexOf(content, selection) : -1,
         prompt = get(this, 'prompt');
 
-    if (prompt && selectionIndex > -1) { selectionIndex += 1; }
+    if (prompt) { selectionIndex += 1; }
     if (el) { el.selectedIndex = selectionIndex; }
   },
 
@@ -2503,14 +2798,18 @@ Ember.Select = Ember.View.extend(
   init: function() {
     this._super();
     this.on("didInsertElement", this, this._triggerChange);
+    this.on("change", this, this._change);
   }
-
 });
 
 Ember.SelectOption = Ember.View.extend({
   tagName: 'option',
-  defaultTemplate: Ember.Handlebars.compile("{{view.label}}"),
   attributeBindings: ['value', 'selected'],
+
+  defaultTemplate: function(context, options) {
+    options = { data: options.data, hash: {} };
+    Ember.Handlebars.helpers.bind.call(context, "view.label", options);
+  },
 
   init: function() {
     this.labelPathDidChange();
@@ -2521,8 +2820,8 @@ Ember.SelectOption = Ember.View.extend({
 
   selected: Ember.computed(function() {
     var content = get(this, 'content'),
-        selection = getPath(this, 'parentView.selection');
-    if (getPath(this, 'parentView.multiple')) {
+        selection = get(this, 'parentView.selection');
+    if (get(this, 'parentView.multiple')) {
       return selection && indexOf(selection, content) > -1;
     } else {
       // Primitives get passed through bindings as objects... since
@@ -2532,22 +2831,22 @@ Ember.SelectOption = Ember.View.extend({
   }).property('content', 'parentView.selection').volatile(),
 
   labelPathDidChange: Ember.observer(function() {
-    var labelPath = getPath(this, 'parentView.optionLabelPath');
+    var labelPath = get(this, 'parentView.optionLabelPath');
 
     if (!labelPath) { return; }
 
     Ember.defineProperty(this, 'label', Ember.computed(function() {
-      return getPath(this, labelPath);
+      return get(this, labelPath);
     }).property(labelPath).cacheable());
   }, 'parentView.optionLabelPath'),
 
   valuePathDidChange: Ember.observer(function() {
-    var valuePath = getPath(this, 'parentView.optionValuePath');
+    var valuePath = get(this, 'parentView.optionValuePath');
 
     if (!valuePath) { return; }
 
     Ember.defineProperty(this, 'value', Ember.computed(function() {
-      return getPath(this, valuePath);
+      return get(this, valuePath);
     }).property(valuePath).cacheable());
   }, 'parentView.optionValuePath')
 });
@@ -2559,7 +2858,7 @@ Ember.SelectOption = Ember.View.extend({
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2570,7 +2869,7 @@ Ember.SelectOption = Ember.View.extend({
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
@@ -2586,10 +2885,6 @@ Ember.SelectOption = Ember.View.extend({
 Ember.Handlebars.bootstrap = function(ctx) {
   var selectors = 'script[type="text/x-handlebars"], script[type="text/x-raw-handlebars"]';
 
-  if (Ember.ENV.LEGACY_HANDLEBARS_TAGS) { selectors += ', script[type="text/html"]'; }
-
-  Ember.warn("Ember no longer parses text/html script tags by default. Set ENV.LEGACY_HANDLEBARS_TAGS = true to restore this functionality.", Ember.ENV.LEGACY_HANDLEBARS_TAGS || Ember.$('script[type="text/html"]').length === 0);
-
   Ember.$(selectors, ctx)
     .each(function() {
     // Get a reference to the script tag
@@ -2604,7 +2899,7 @@ Ember.Handlebars.bootstrap = function(ctx) {
       // id if no name is found.
       templateName = script.attr('data-template-name') || script.attr('id'),
       template = compile(script.html()),
-      view, viewPath, elementId, tagName, options;
+      view, viewPath, elementId, options;
 
     if (templateName) {
       // For templates which have a name, we save them and then remove them from the DOM
@@ -2627,19 +2922,14 @@ Ember.Handlebars.bootstrap = function(ctx) {
       // Users can optionally specify a custom view subclass to use by setting the
       // data-view attribute of the script tag.
       viewPath = script.attr('data-view');
-      view = viewPath ? Ember.getPath(viewPath) : Ember.View;
+      view = viewPath ? Ember.get(viewPath) : Ember.View;
 
       // Get the id of the script, used by Ember.View's elementId property,
       // Look for data-element-id attribute.
       elementId = script.attr('data-element-id');
 
-      // Users can optionally specify a custom tag name to use by setting the
-      // data-tag-name attribute on the script tag.
-      tagName = script.attr('data-tag-name');
-
       options = { template: template };
       if (elementId) { options.elementId = elementId; }
-      if (tagName)   { options.tagName   = tagName; }
 
       view = view.create(options);
 
@@ -2653,11 +2943,24 @@ Ember.Handlebars.bootstrap = function(ctx) {
   });
 };
 
-Ember.$(document).ready(
-  function(){
-    Ember.Handlebars.bootstrap( Ember.$(document) );
-  }
-);
+/** @private */
+function bootstrap() {
+  Ember.Handlebars.bootstrap( Ember.$(document) );
+}
+
+/*
+  We tie this to application.load to ensure that we've at least
+  attempted to bootstrap at the point that the application is loaded.
+
+  We also tie this to document ready since we're guaranteed that all
+  the inline templates are present at this point.
+
+  There's no harm to running this twice, since we remove the templates
+  from the DOM after processing.
+*/
+
+Ember.$(document).ready(bootstrap);
+Ember.onLoad('application', bootstrap);
 
 })();
 
@@ -2665,7 +2968,7 @@ Ember.$(document).ready(
 
 (function() {
 // ==========================================================================
-// Project:   Ember Handlebar Views
+// Project:   Ember Handlebars Views
 // Copyright: ©2011 Strobe Inc. and contributors.
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================

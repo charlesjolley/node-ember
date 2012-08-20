@@ -4,6 +4,7 @@
 
 require("./views");
 require("./states");
+require("./routing");
 
 
 (function() {
@@ -92,66 +93,92 @@ Ember.Application = Ember.Namespace.extend(
 
   /**
     Instantiate all controllers currently available on the namespace
-    and inject them onto a state manager.
+    and inject them onto a router.
 
     Example:
 
-      App.PostsController = Ember.ArrayController.extend();
-      App.CommentsController = Ember.ArrayController.extend();
+        App.PostsController = Ember.ArrayController.extend();
+        App.CommentsController = Ember.ArrayController.extend();
 
-      var stateManager = Ember.StateManager.create({
-        ...
-      });
+        var router = Ember.Router.create({
+          ...
+        });
 
-      App.initialize(stateManager);
+        App.initialize(router);
 
-      stateManager.get('postsController')     // <App.PostsController:ember1234>
-      stateManager.get('commentsController')  // <App.CommentsController:ember1235>
+        router.get('postsController')     // <App.PostsController:ember1234>
+        router.get('commentsController')  // <App.CommentsController:ember1235>
 
-      stateManager.getPath('postsController.stateManager') // stateManager
+        router.get('postsController.router') // router
   */
-  initialize: function(stateManager) {
+  initialize: function(router) {
     var properties = Ember.A(Ember.keys(this)),
         injections = get(this.constructor, 'injections'),
         namespace = this, controller, name;
 
+    if (!router && Ember.Router.detect(namespace['Router'])) {
+      router = namespace['Router'].create();
+      this._createdRouter = router;
+    }
+
+    if (router) {
+      set(this, 'router', router);
+
+      // By default, the router's namespace is the current application.
+      //
+      // This allows it to find model classes when a state has a
+      // route like `/posts/:post_id`. In that case, it would first
+      // convert `post_id` into `Post`, and then look it up on its
+      // namespace.
+      set(router, 'namespace', this);
+    }
+
     Ember.runLoadHooks('application', this);
 
-    properties.forEach(function(property) {
-      injections.forEach(function(injection) {
-        injection(namespace, stateManager, property);
+    injections.forEach(function(injection) {
+      properties.forEach(function(property) {
+        injection[1](namespace, router, property);
       });
     });
+
+    if (router && router instanceof Ember.Router) {
+      this.startRouting(router);
+    }
   },
 
   /** @private */
   didBecomeReady: function() {
     var eventDispatcher = get(this, 'eventDispatcher'),
-        stateManager    = get(this, 'stateManager'),
         customEvents    = get(this, 'customEvents');
 
     eventDispatcher.setup(customEvents);
 
     this.ready();
-
-    if (stateManager && stateManager instanceof Ember.Router) {
-      this.setupStateManager(stateManager);
-    }
   },
 
   /**
     @private
 
-    If the application has a state manager, use it to route
-    to the current URL, and trigger a new call to `route`
-    whenever the URL changes.
+    If the application has a router, use it to route to the current URL, and
+    trigger a new call to `route` whenever the URL changes.
   */
-  setupStateManager: function(stateManager) {
-    var location = get(stateManager, 'location');
+  startRouting: function(router) {
+    var location = get(router, 'location'),
+        rootElement = get(this, 'rootElement'),
+        applicationController = get(router, 'applicationController');
 
-    stateManager.route(location.getURL());
+    Ember.assert("ApplicationView and ApplicationController must be defined on your application", (this.ApplicationView && applicationController) );
+
+    var applicationView = this.ApplicationView.create({
+      controller: applicationController
+    });
+    this._createdApplicationView = applicationView;
+
+    applicationView.appendTo(rootElement);
+
+    router.route(location.getURL());
     location.onUpdateURL(function(url) {
-      stateManager.route(url);
+      router.route(url);
     });
   },
 
@@ -162,32 +189,56 @@ Ember.Application = Ember.Namespace.extend(
   ready: Ember.K,
 
   /** @private */
-  destroy: function() {
+  willDestroy: function() {
     get(this, 'eventDispatcher').destroy();
-    return this._super();
+    if (this._createdRouter)          { this._createdRouter.destroy(); }
+    if (this._createdApplicationView) { this._createdApplicationView.destroy(); }
   },
 
-  registerInjection: function(callback) {
-    this.constructor.registerInjection(callback);
+  registerInjection: function(options) {
+    this.constructor.registerInjection(options);
   }
 });
 
 Ember.Application.reopenClass({
   concatenatedProperties: ['injections'],
   injections: Ember.A(),
-  registerInjection: function(callback) {
-    get(this, 'injections').pushObject(callback);
+  registerInjection: function(options) {
+    var injections = get(this, 'injections'),
+        before = options.before,
+        name = options.name,
+        injection = options.injection,
+        location;
+
+    if (before) {
+      location = injections.find(function(item) {
+        if (item[0] === before) { return true; }
+      });
+      location = injections.indexOf(location);
+    } else {
+      location = get(injections, 'length');
+    }
+
+    injections.splice(location, 0, [name, injection]);
   }
 });
 
-Ember.Application.registerInjection(function(app, stateManager, property) {
-  if (!/^[A-Z].*Controller$/.test(property)) { return; }
+Ember.Application.registerInjection({
+  name: 'controllers',
+  injection: function(app, router, property) {
+    if (!/^[A-Z].*Controller$/.test(property)) { return; }
 
-  var name = property[0].toLowerCase() + property.substr(1),
-      controller = app[property].create();
+    var name = property.charAt(0).toLowerCase() + property.substr(1),
+        controller = app[property].create();
 
-  stateManager.set(name, controller);
-  controller.set('target', stateManager);
+    router.set(name, controller);
+
+    controller.setProperties({
+      target: router,
+      controllers: router,
+      namespace: app
+    });
+  }
 });
 
 })();
@@ -205,19 +256,62 @@ var get = Ember.get, set = Ember.set;
   getURL: returns the current URL
   setURL(path): sets the current URL
   onUpdateURL(callback): triggers the callback when the URL changes
+  formatURL(url): formats `url` to be placed into `href` attribute
 
   Calling setURL will not trigger onUpdateURL callbacks.
+
+  TODO: This, as well as the Ember.Location documentation below, should
+  perhaps be moved so that it's visible in the JsDoc output.
 */
+/**
+  @class
+
+  Ember.Location returns an instance of the correct implementation of
+  the `location` API.
+
+  You can pass it a `implementation` ('hash', 'history', 'none') to force a
+  particular implementation.
+*/
+Ember.Location = {
+  create: function(options) {
+    var implementation = options && options.implementation;
+    Ember.assert("Ember.Location.create: you must specify a 'implementation' option", !!implementation);
+
+    var implementationClass = this.implementations[implementation];
+    Ember.assert("Ember.Location.create: " + implementation + " is not a valid implementation", !!implementationClass);
+
+    return implementationClass.create.apply(implementationClass, arguments);
+  },
+
+  registerImplementation: function(name, implementation) {
+    this.implementations[name] = implementation;
+  },
+
+  implementations: {}
+};
+
+})();
+
+
+
+(function() {
+var get = Ember.get, set = Ember.set;
 
 /**
+  @class
+
   Ember.HashLocation implements the location API using the browser's
   hash. At present, it relies on a hashchange event existing in the
   browser.
+
+  @extends Ember.Object
 */
-Ember.HashLocation = Ember.Object.extend({
+Ember.HashLocation = Ember.Object.extend(
+/** @scope Ember.HashLocation.prototype */ {
+
+  /** @private */
   init: function() {
     set(this, 'location', get(this, 'location') || window.location);
-    set(this, 'callbacks', Ember.A());
   },
 
   /**
@@ -250,45 +344,193 @@ Ember.HashLocation = Ember.Object.extend({
   */
   onUpdateURL: function(callback) {
     var self = this;
+    var guid = Ember.guidFor(this);
 
-    var hashchange = function() {
+    Ember.$(window).bind('hashchange.ember-location-'+guid, function() {
       var path = location.hash.substr(1);
       if (get(self, 'lastSetURL') === path) { return; }
 
       set(self, 'lastSetURL', null);
 
       callback(location.hash.substr(1));
-    };
-
-    get(this, 'callbacks').pushObject(hashchange);
-    window.addEventListener('hashchange', hashchange);
+    });
   },
 
+  /**
+    @private
+
+    Given a URL, formats it to be placed into the page as part
+    of an element's `href` attribute.
+
+    This is used, for example, when using the {{action}} helper
+    to generate a URL based on an event.
+  */
+  formatURL: function(url) {
+    return '#'+url;
+  },
+
+  /** @private */
   willDestroy: function() {
-    get(this, 'callbacks').forEach(function(callback) {
-      window.removeEventListener('hashchange', callback);
-    });
-    set(this, 'callbacks', null);
+    var guid = Ember.guidFor(this);
+
+    Ember.$(window).unbind('hashchange.ember-location-'+guid);
   }
 });
 
+Ember.Location.registerImplementation('hash', Ember.HashLocation);
+
+})();
+
+
+
+(function() {
+var get = Ember.get, set = Ember.set;
+
 /**
-  Ember.Location returns an instance of the correct implementation of
-  the `location` API.
+  @class
 
-  You can pass it a `style` ('hash', 'html5', 'none') to force a
-  particular implementation.
+  Ember.HistoryLocation implements the location API using the browser's
+  history.pushState API.
+
+  @extends Ember.Object
 */
-Ember.Location = {
-  create: function(options) {
-    var style = options && options.style;
-    Ember.assert("you must provide a style to Ember.Location.create", !!style);
+Ember.HistoryLocation = Ember.Object.extend(
+/** @scope Ember.HistoryLocation.prototype */ {
 
-    if (style === "hash") {
-      return Ember.HashLocation.create.apply(Ember.HashLocation, arguments);
+  /** @private */
+  init: function() {
+    set(this, 'location', get(this, 'location') || window.location);
+    set(this, '_initialURL', get(this, 'location').pathname);
+  },
+
+  /**
+    Will be pre-pended to path upon state change
+   */
+  rootURL: '/',
+
+  /**
+    @private
+
+    Used to give history a starting reference
+   */
+  _initialURL: null,
+
+  /**
+    @private
+
+    Returns the current `location.pathname`.
+  */
+  getURL: function() {
+    return get(this, 'location').pathname;
+  },
+
+  /**
+    @private
+
+    Uses `history.pushState` to update the url without a page reload.
+  */
+  setURL: function(path) {
+    var state = window.history.state,
+        initialURL = get(this, '_initialURL');
+
+    path = this.formatPath(path);
+
+    if ((initialURL !== path && !state) || (state && state.path !== path)) {
+      window.history.pushState({ path: path }, null, path);
     }
+  },
+
+  /**
+    @private
+
+    Register a callback to be invoked whenever the browser
+    history changes, including using forward and back buttons.
+  */
+  onUpdateURL: function(callback) {
+    var guid = Ember.guidFor(this);
+
+    Ember.$(window).bind('popstate.ember-location-'+guid, function(e) {
+      callback(location.pathname);
+    });
+  },
+
+  /**
+    @private
+
+    returns the given path appended to rootURL
+   */
+  formatPath: function(path) {
+    var rootURL = get(this, 'rootURL');
+
+    if (path !== '') {
+      rootURL = rootURL.replace(/\/$/, '');
+    }
+
+    return rootURL + path;
+  },
+
+  /**
+    @private
+
+    Used when using {{action}} helper.  Since no formatting
+    is required we just return the url given.
+  */
+  formatURL: function(url) {
+    return url;
+  },
+
+  /** @private */
+  willDestroy: function() {
+    var guid = Ember.guidFor(this);
+
+    Ember.$(window).unbind('popstate.ember-location-'+guid);
   }
-};
+});
+
+Ember.Location.registerImplementation('history', Ember.HistoryLocation);
+
+})();
+
+
+
+(function() {
+var get = Ember.get, set = Ember.set;
+
+/**
+  @class
+
+  Ember.NoneLocation does not interact with the browser. It is useful for
+  testing, or when you need to manage state with your Router, but temporarily
+  don't want it to muck with the URL (for example when you embed your
+  application in a larger page).
+
+  @extends Ember.Object
+*/
+Ember.NoneLocation = Ember.Object.extend(
+/** @scope Ember.NoneLocation.prototype */ {
+  path: '',
+
+  getURL: function() {
+    return get(this, 'path');
+  },
+
+  setURL: function(path) {
+    set(this, 'path', path);
+  },
+
+  onUpdateURL: function(callback) {
+    // We are not wired up to the browser, so we'll never trigger the callback.
+  },
+
+  formatURL: function(url) {
+    // The return value is not overly meaningful, but we do not want to throw
+    // errors when test code renders templates containing {{action href=true}}
+    // helpers.
+    return url;
+  }
+});
+
+Ember.Location.registerImplementation('none', Ember.NoneLocation);
 
 })();
 

@@ -5,6 +5,7 @@
 require("./runtime");
 require("./views");
 require("./states");
+require("./routing");
 require("./handlebars");
 require("./application");
 

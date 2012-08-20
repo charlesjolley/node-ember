@@ -15,7 +15,7 @@ require("./runtime");
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 
-Ember.assert("Ember Views require jQuery 1.6 or 1.7", window.jQuery && window.jQuery().jquery.match(/^1\.[67](\.\d+)?(pre|rc\d?)?/));
+Ember.assert("Ember Views require jQuery 1.7", window.jQuery && (window.jQuery().jquery.match(/^1\.7(\.\d+)?(pre|rc\d?)?/) || Ember.ENV.FORCE_JQUERY));
 Ember.$ = window.jQuery;
 
 })();
@@ -30,9 +30,29 @@ Ember.$ = window.jQuery;
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 
+// http://www.whatwg.org/specs/web-apps/current-work/multipage/dnd.html#dndevents
+var dragEvents = Ember.String.w('dragstart drag dragenter dragleave dragover drop dragend');
+
+// Copies the `dataTransfer` property from a browser event object onto the
+// jQuery event object for the specified events
+Ember.EnumerableUtils.forEach(dragEvents, function(eventName) {
+  Ember.$.event.fixHooks[eventName] = { props: ['dataTransfer'] };
+});
+
+})();
+
+
+
+(function() {
+// ==========================================================================
+// Project:   Ember - JavaScript Application Framework
+// Copyright: ©2006-2011 Strobe Inc. and contributors.
+//            Portions ©2008-2011 Apple Inc. All rights reserved.
+// License:   Licensed under MIT license (see license.js)
+// ==========================================================================
+
 var get = Ember.get, set = Ember.set;
-var forEach = Ember.ArrayUtils.forEach;
-var indexOf = Ember.ArrayUtils.indexOf;
+var indexOf = Ember.ArrayPolyfills.indexOf;
 
 /** @private */
 var ClassSet = function() {
@@ -250,7 +270,7 @@ Ember._RenderBuffer.prototype =
     var buffer = new Ember._RenderBuffer(tagName);
     buffer.parentBuffer = parent;
 
-    if (other) { buffer.setProperties(other); }
+    if (other) { Ember.$.extend(buffer, other); }
     if (fn) { fn.call(this, buffer); }
 
     return buffer;
@@ -271,7 +291,7 @@ Ember._RenderBuffer.prototype =
 
     var childBuffers = parent.childBuffers;
 
-    var index = indexOf(childBuffers, this);
+    var index = indexOf.call(childBuffers, this);
 
     if (newBuffer) {
       childBuffers.splice(index, 1, newBuffer);
@@ -328,7 +348,7 @@ Ember._RenderBuffer.prototype =
 
     return this.newBuffer(tagName, parentBuffer, function(buffer) {
       var siblings = parentBuffer.childBuffers;
-      var index = indexOf(siblings, this);
+      var index = indexOf.call(siblings, this);
       siblings.splice(index + 1, 0, buffer);
     });
   },
@@ -398,7 +418,7 @@ Ember._RenderBuffer.prototype =
 
     var childBuffers = this.childBuffers;
 
-    forEach(childBuffers, function(buffer) {
+    Ember.ArrayPolyfills.forEach.call(childBuffers, function(buffer) {
       var stringy = typeof buffer === 'string';
       content += (stringy ? buffer : buffer.string());
     });
@@ -608,6 +628,7 @@ Ember.EventDispatcher = Ember.Object.extend(
     var handler = object[eventName];
     if (Ember.typeOf(handler) === 'function') {
       result = handler.call(object, evt, view);
+      // Do not preventDefault in eventManagers.
       evt.stopPropagation();
     }
     else {
@@ -654,6 +675,176 @@ queues.splice(Ember.$.inArray('actions', queues)+1, 0, 'render');
 
 
 (function() {
+var get = Ember.get, set = Ember.set;
+
+Ember.ControllerMixin.reopen({
+
+  target: null,
+  controllers: null,
+  namespace: null,
+  view: null,
+
+  /**
+    `connectOutlet` creates a new instance of a provided view
+    class, wires it up to its associated controller, and
+    assigns the new view to a property on the current controller.
+
+    The purpose of this method is to enable views that use
+    outlets to quickly assign new views for a given outlet.
+
+    For example, an application view's template may look like
+    this:
+
+        <h1>My Blog</h1>
+        {{outlet}}
+
+    The view for this outlet is specified by assigning a
+    `view` property to the application's controller. The
+    following code will assign a new `App.PostsView` to
+    that outlet:
+
+        applicationController.connectOutlet('posts');
+
+    In general, you will also want to assign a controller
+    to the newly created view. By convention, a controller
+    named `postsController` will be assigned as the view's
+    controller.
+
+    In an application initialized using `app.initialize(router)`,
+    `connectOutlet` will look for `postsController` on the
+    router. The initialization process will automatically
+    create an instance of `App.PostsController` called
+    `postsController`, so you don't need to do anything
+    beyond `connectOutlet` to assign your view and wire it
+    up to its associated controller.
+
+    You can supply a `content` for the controller by supplying
+    a final argument after the view class:
+
+        applicationController.connectOutlet('posts', App.Post.find());
+
+    You can specify a particular outlet to use. For example, if your main
+    template looks like:
+
+        <h1>My Blog</h1>
+        {{outlet master}}
+        {{outlet detail}}
+
+    You can assign an `App.PostsView` to the master outlet:
+
+        applicationController.connectOutlet({
+          name: 'posts',
+          outletName: 'master',
+          context: App.Post.find()
+        });
+
+    You can write this as:
+
+        applicationController.connectOutlet('master', 'posts', App.Post.find());
+
+    @param {String} outletName a name for the outlet to set
+    @param {String} name a view/controller pair name
+    @param {Object} context a context object to assign to the
+      controller's `content` property, if a controller can be
+      found (optional)
+  */
+  connectOutlet: function(name, context) {
+    // Normalize arguments. Supported arguments:
+    //
+    // name
+    // name, context
+    // outletName, name
+    // outletName, name, context
+    // options
+    //
+    // The options hash has the following keys:
+    //
+    //   name: the name of the controller and view
+    //     to use. If this is passed, the name
+    //     determines the view and controller.
+    //   outletName: the name of the outlet to
+    //     fill in. default: 'view'
+    //   viewClass: the class of the view to instantiate
+    //   controller: the controller instance to pass
+    //     to the view
+    //   context: an object that should become the
+    //     controller's `content` and thus the
+    //     template's context.
+
+    var outletName, viewClass, view, controller, options;
+
+    if (Ember.typeOf(context) === 'string') {
+      outletName = name;
+      name = context;
+      context = arguments[2];
+    }
+
+    if (arguments.length === 1) {
+      if (Ember.typeOf(name) === 'object') {
+        options = name;
+        outletName = options.outletName;
+        name = options.name;
+        viewClass = options.viewClass;
+        controller = options.controller;
+        context = options.context;
+      }
+    } else {
+      options = {};
+    }
+
+    outletName = outletName || 'view';
+
+    Ember.assert("You must supply a name or a view class to connectOutlets, but not both", (!!name && !viewClass && !controller) || (!name && !!viewClass));
+
+    if (name) {
+      var namespace = get(this, 'namespace'),
+          controllers = get(this, 'controllers');
+
+      var viewClassName = name.charAt(0).toUpperCase() + name.substr(1) + "View";
+      viewClass = get(namespace, viewClassName);
+      controller = get(controllers, name + 'Controller');
+
+      Ember.assert("The name you supplied " + name + " did not resolve to a view " + viewClassName, !!viewClass);
+      Ember.assert("The name you supplied " + name + " did not resolve to a controller " + name + 'Controller', (!!controller && !!context) || !context);
+    }
+
+    if (controller && context) { controller.set('content', context); }
+    view = viewClass.create();
+    if (controller) { set(view, 'controller', controller); }
+    set(this, outletName, view);
+
+    return view;
+  },
+
+  /**
+    Convenience method to connect controllers. This method makes other controllers
+    available on the controller the method was invoked on.
+
+    For example, to make the `personController` and the `postController` available
+    on the `overviewController`, you would call:
+
+        overviewController.connectControllers('person', 'post');
+
+    @param {String...} controllerNames the controllers to make available
+  */
+  connectControllers: function() {
+    var controllers = get(this, 'controllers'),
+        controllerNames = Array.prototype.slice.apply(arguments),
+        controllerName;
+
+    for (var i=0, l=controllerNames.length; i<l; i++) {
+      controllerName = controllerNames[i] + 'Controller';
+      set(this, controllerName, get(controllers, controllerName));
+    }
+  }
+});
+
+
+})();
+
+
+
+(function() {
 // ==========================================================================
 // Project:   Ember - JavaScript Application Framework
 // Copyright: ©2006-2011 Strobe Inc. and contributors.
@@ -673,12 +864,12 @@ queues.splice(Ember.$.inArray('actions', queues)+1, 0, 'render');
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 var get = Ember.get, set = Ember.set, addObserver = Ember.addObserver;
-var getPath = Ember.getPath, meta = Ember.meta, fmt = Ember.String.fmt;
-var a_slice = Array.prototype.slice;
-var a_forEach = Ember.ArrayUtils.forEach;
+var meta = Ember.meta, fmt = Ember.String.fmt;
+var a_slice = [].slice;
+var a_forEach = Ember.EnumerableUtils.forEach;
 
 var childViewsProperty = Ember.computed(function() {
-  var childViews = get(this, '_childViews');
+  var childViews = this._childViews;
 
   var ret = Ember.A();
 
@@ -817,6 +1008,43 @@ var invokeForState = {
 
       <div id="ember1" class="ember-view empty"></div>
 
+
+  If you want to add a class name for a property which evaluates to true and
+  and a different class name if it evaluates to false, you can pass a binding
+  like this:
+
+    // Applies 'enabled' class when isEnabled is true and 'disabled' when isEnabled is false
+    Ember.View.create({
+      classNameBindings: ['isEnabled:enabled:disabled']
+      isEnabled: true
+    });
+
+  Will result in view instances with an HTML representation of:
+
+      <div id="ember1" class="ember-view enabled"></div>
+
+  When isEnabled is `false`, the resulting HTML reprensentation looks like this:
+
+      <div id="ember1" class="ember-view disabled"></div>
+
+  This syntax offers the convenience to add a class if a property is `false`:
+
+    // Applies no class when isEnabled is true and class 'disabled' when isEnabled is false
+    Ember.View.create({
+      classNameBindings: ['isEnabled::disabled']
+      isEnabled: true
+    });
+
+  Will result in view instances with an HTML representation of:
+
+    <div id="ember1" class="ember-view"></div>
+
+  When the `isEnabled` property on the view is set to `false`, it will result
+  in view instances with an HTML representation of:
+
+    <div id="ember1" class="ember-view disabled"></div>
+
+
   Updates to the the value of a class name binding will result in automatic update 
   of the  HTML `class` attribute in the view's rendered HTML representation.
   If the value becomes  `false` or `undefined` the class name will be removed.
@@ -898,7 +1126,7 @@ var invokeForState = {
           firstName: 'Barry'
         })
         excitedGreeting: function(){
-          return this.getPath("content.firstName") + "!!!"
+          return this.get("content.firstName") + "!!!"
         }
       })
 
@@ -954,10 +1182,12 @@ var invokeForState = {
       <div id="ember1" class="ember-view">I was the template, not default</div>
 
   ## Layouts
-  Views can have a secondary outer template that wraps their main template. Like
+  Views can have a secondary template that wraps their main template. Like
   primary templates, layouts can be any function that  accepts an optional context
-  parameter and returns a string of HTML that will be inserted a view's tag.
-  Most typically in Ember this function will be a compiled Ember.Handlebars template.
+  parameter and returns a string of HTML that will be inserted inside view's tag. Views whose HTML
+  element is self closing (e.g. `<input />`) cannot have a layout and this property will be ignored.
+  
+  Most typically in Ember a layout will be a compiled Ember.Handlebars template.
 
   A view's layout can be set directly with the `layout` property or reference an
   existing Handlebars template by name with the `layoutName` property.
@@ -1038,8 +1268,8 @@ var invokeForState = {
   by the event manager will still trigger method calls on the descendent.
 
       OuterView = Ember.View.extend({
+        template: Ember.Handlebars.compile("outer {{#view InnerView}}inner{{/view}} outer"),
         eventManager: Ember.Object.create({
-          template: Ember.Handlebars.compile("outer {{#view InnerView}}inner{{/view}} outer"),
           mouseEnter: function(event, view){
             // view might be instance of either
             // OutsideView or InnerView depending on
@@ -1082,6 +1312,7 @@ var invokeForState = {
   Handlebars helper. See `Handlebars.helpers.view` for additional information.
 
   @extends Ember.Object
+  @extends Ember.Evented
 */
 Ember.View = Ember.Object.extend(Ember.Evented,
 /** @scope Ember.View.prototype */ {
@@ -1158,13 +1389,23 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
     @type Object
   */
-  controller: null,
+  controller: Ember.computed(function(key, value) {
+    var parentView;
+
+    if (arguments.length === 2) {
+      return value;
+    } else {
+      parentView = get(this, 'parentView');
+      return parentView ? get(parentView, 'controller') : null;
+    }
+  }).property().cacheable(),
 
   /**
     A view may contain a layout. A layout is a regular template but
     supersedes the `template` property during rendering. It is the
     responsibility of the layout template to retrieve the `template`
-    property from the view and render it in the correct location.
+    property from the view (or alternatively, call `Handlebars.helpers.yield`,
+    `{{yield}}`) to render it in the correct location.
 
     This is useful for a view that has a shared wrapper, but which delegates
     the rendering of the contents of the wrapper to the `template` property
@@ -1206,12 +1447,12 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
     @type Object
   */
-  templateContext: Ember.computed(function(key, value) {
+  context: Ember.computed(function(key, value) {
     if (arguments.length === 2) {
-      set(this, '_templateContext', value);
+      set(this, '_context', value);
       return value;
     } else {
-      return get(this, '_templateContext');
+      return get(this, '_context');
     }
   }).cacheable(),
 
@@ -1221,18 +1462,32 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     Private copy of the view's template context. This can be set directly
     by Handlebars without triggering the observer that causes the view
     to be re-rendered.
+
+    The context of a view is looked up as follows:
+
+    1. Specified controller
+    2. Supplied context (usually by Handlebars)
+    3. `parentView`'s context (for a child of a ContainerView)
+
+    The code in Handlebars that overrides the `_context` property first
+    checks to see whether the view has a specified controller. This is
+    something of a hack and should be revisited.
   */
-  _templateContext: Ember.computed(function(key, value) {
-    var parentView;
+  _context: Ember.computed(function(key, value) {
+    var parentView, controller, context;
 
     if (arguments.length === 2) {
       return value;
     }
 
     if (VIEW_PRESERVES_CONTEXT) {
+      if (controller = get(this, 'controller')) {
+        return controller;
+      }
+
       parentView = get(this, '_parentView');
       if (parentView) {
-        return get(parentView, '_templateContext');
+        return get(parentView, '_context');
       }
     }
 
@@ -1247,7 +1502,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   */
   _displayPropertyDidChange: Ember.observer(function() {
     this.rerender();
-  }, 'templateContext', 'controller'),
+  }, 'context', 'controller'),
 
   /**
     If the view is currently inserted into the DOM of a parent view, this
@@ -1406,21 +1661,26 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       view.propertyDidChange('itemView');
       view.propertyDidChange('contentView');
     });
+
+    if (get(this, 'parentView.controller') && !get(this, 'controller')) {
+      this.notifyPropertyChange('controller');
+    }
   }, '_parentView'),
 
+  _controllerDidChange: Ember.observer(function() {
+    if (this.isDestroying) { return; }
+
+    this.forEachChildView(function(view) {
+      view.propertyDidChange('controller');
+    });
+  }, 'controller'),
+
   cloneKeywords: function() {
-    var templateData = get(this, 'templateData'),
-        controller = get(this, 'controller');
+    var templateData = get(this, 'templateData');
 
     var keywords = templateData ? Ember.copy(templateData.keywords) : {};
-    keywords.view = get(this, 'concreteView');
-
-    // If the view has a controller specified, make it available to the
-    // template. If not, pass along the parent template's controller,
-    // if it exists.
-    if (controller) {
-      keywords.controller = controller;
-    }
+    set(keywords, 'view', get(this, 'concreteView'));
+    set(keywords, 'controller', get(this, 'controller'));
 
     return keywords;
   },
@@ -1431,8 +1691,8 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     or `templateName` properties instead of this method.
 
     By default, Ember.View will look for a function in the `template`
-    property and invoke it with the value of `templateContext`. The value of
-    `templateContext` will be the view itself unless you override it.
+    property and invoke it with the value of `context`. The value of
+    `context` will be the view's controller unless you override it.
 
     @param {Ember.RenderBuffer} buffer The render buffer
   */
@@ -1443,7 +1703,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     var template = get(this, 'layout') || get(this, 'template');
 
     if (template) {
-      var context = get(this, '_templateContext');
+      var context = get(this, '_context');
       var keywords = this.cloneKeywords();
 
       var data = {
@@ -1457,7 +1717,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       // is the view by default. A hash of data is also passed that provides
       // the template with access to the view and render buffer.
 
-      Ember.assert('template must be a function. Did you mean to specify templateName instead?', typeof template === 'function');
+      Ember.assert('template must be a function. Did you mean to call Ember.Handlebars.compile("...") or specify templateName instead?', typeof template === 'function');
       // The template should write directly to the render buffer instead
       // of returning a string.
       var output = template(context, { data: data });
@@ -1469,7 +1729,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   },
 
   invokeForState: function(name) {
-    var stateName = this.state, args;
+    var stateName = this.state, args, fn;
 
     // try to find the function for the state in the cache
     if (fn = invokeForState[stateName][name]) {
@@ -1486,7 +1746,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       state = states[stateName];
 
       while (state) {
-        var fn = state[name];
+        fn = state[name];
 
         if (fn) {
           invokeForState[stateName][name] = fn;
@@ -1531,7 +1791,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     // we re-render.
 
     // VIEW-TODO: Unit test this path.
-    var childViews = get(this, '_childViews');
+    var childViews = this._childViews;
     for (var i=lengthAfter-1; i>=lengthBefore; i--) {
       if (childViews[i]) { childViews[i].destroy(); }
     }
@@ -1560,7 +1820,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       // Variable in which the old class value is saved. The observer function
       // closes over this variable, so it knows which string to remove when
       // the property changes.
-      var oldClass, property;
+      var oldClass;
 
       // Set up an observer on the context. If the property changes, toggle the
       // class name.
@@ -1602,8 +1862,8 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       }
 
       // Extract just the property name from bindings like 'foo:bar'
-      property = binding.split(':')[0];
-      addObserver(this, property, observer);
+      var parsedPath = Ember.View._parsePropertyPath(binding);
+      addObserver(this, parsedPath.path, observer);
     }, this);
   },
 
@@ -1628,6 +1888,8 @@ Ember.View = Ember.Object.extend(Ember.Evented,
       // JavaScript property changes.
       var observer = function() {
         elem = this.$();
+        if (!elem) { return; }
+
         attributeValue = get(this, property);
 
         Ember.View.applyAttributeBindings(elem, attributeName, attributeValue);
@@ -1652,41 +1914,15 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     passing `isUrgent` to this method will return `"is-urgent"`.
   */
   _classStringForProperty: function(property) {
-    var split = property.split(':'),
-        className = split[1];
+    var parsedPath = Ember.View._parsePropertyPath(property);
+    var path = parsedPath.path;
 
-    property = split[0];
-
-    // TODO: Remove this `false` when the `getPath` globals support is removed
-    var val = Ember.getPath(this, property, false);
-    if (val === undefined && Ember.isGlobalPath(property)) {
-      val = Ember.getPath(window, property);
+    var val = get(this, path);
+    if (val === undefined && Ember.isGlobalPath(path)) {
+      val = get(window, path);
     }
 
-    // If the value is truthy and we're using the colon syntax,
-    // we should return the className directly
-    if (!!val && className) {
-      return className;
-
-    // If value is a Boolean and true, return the dasherized property
-    // name.
-    } else if (val === true) {
-      // Normalize property path to be suitable for use
-      // as a class name. For exaple, content.foo.barBaz
-      // becomes bar-baz.
-      var parts = property.split('.');
-      return Ember.String.dasherize(parts[parts.length-1]);
-
-    // If the value is not false, undefined, or null, return the current
-    // value of the property.
-    } else if (val !== false && val !== undefined && val !== null) {
-      return val;
-
-    // Nothing to display. Return null so that the old class is removed
-    // but no new class is added.
-    } else {
-      return null;
-    }
+    return Ember.View._classStringForValue(path, val, parsedPath.className, parsedPath.falsyClassName);
   },
 
   // ..........................................................
@@ -1724,8 +1960,8 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
   /** @private */
   mutateChildViews: function(callback) {
-    var childViews = get(this, '_childViews'),
-        idx = get(childViews, 'length'),
+    var childViews = this._childViews,
+        idx = childViews.length,
         view;
 
     while(--idx >= 0) {
@@ -1738,11 +1974,11 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
   /** @private */
   forEachChildView: function(callback) {
-    var childViews = get(this, '_childViews');
+    var childViews = this._childViews;
 
     if (!childViews) { return this; }
 
-    var len = get(childViews, 'length'),
+    var len = childViews.length,
         view, idx;
 
     for(idx = 0; idx < len; idx++) {
@@ -1773,11 +2009,10 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     @returns {Ember.View} receiver
   */
   appendTo: function(target) {
-    Ember.assert("You cannot append to an existing Ember.View. Consider using Ember.ContainerView instead.", !Ember.$(target).is('.ember-view') && !Ember.$(target).parents().is('.ember-view'));
-
     // Schedule the DOM element to be created and appended to the given
     // element after bindings have synchronized.
     this._insertElementLater(function() {
+      Ember.assert("You cannot append to an existing Ember.View. Consider using Ember.ContainerView instead.", !Ember.$(target).is('.ember-view') && !Ember.$(target).parents().is('.ember-view'));
       this.$().appendTo(target);
     });
 
@@ -1989,7 +2224,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   */
   _notifyWillInsertElement: function() {
     this.invokeRecursively(function(view) {
-      view.fire('willInsertElement');
+      view.trigger('willInsertElement');
     });
   },
 
@@ -2001,7 +2236,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   */
   _notifyDidInsertElement: function() {
     this.invokeRecursively(function(view) {
-      view.fire('didInsertElement');
+      view.trigger('didInsertElement');
     });
   },
 
@@ -2013,7 +2248,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   */
   _notifyWillRerender: function() {
     this.invokeRecursively(function(view) {
-      view.fire('willRerender');
+      view.trigger('willRerender');
     });
   },
 
@@ -2052,7 +2287,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   */
   _notifyWillDestroyElement: function() {
     this.invokeRecursively(function(view) {
-      view.fire('willDestroyElement');
+      view.trigger('willDestroyElement');
     });
   },
 
@@ -2131,13 +2366,13 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     this.buffer = buffer;
     this.transitionTo('inBuffer', false);
 
-    this.lengthBeforeRender = get(get(this, '_childViews'), 'length');
+    this.lengthBeforeRender = this._childViews.length;
 
     this.beforeRender(buffer);
     this.render(buffer);
     this.afterRender(buffer);
 
-    this.lengthAfterRender = get(get(this, '_childViews'), 'length');
+    this.lengthAfterRender = this._childViews.length;
 
     return buffer;
   },
@@ -2294,13 +2529,11 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     this._super();
 
     // Register the view for event handling. This hash is used by
-    // Ember.RootResponder to dispatch incoming events.
-    Ember.View.views[get(this, 'elementId')] = this;
-
-    var childViews = get(this, '_childViews').slice();
+    // Ember.EventDispatcher to dispatch incoming events.
+    if (!this.isVirtual) Ember.View.views[get(this, 'elementId')] = this;
 
     // setup child views. be sure to clone the child views array first
-    set(this, '_childViews', childViews);
+    this._childViews = this._childViews.slice();
 
     Ember.assert("Only arrays are allowed for 'classNameBindings'", Ember.typeOf(this.classNameBindings) === 'array');
     this.classNameBindings = Ember.A(this.classNameBindings.slice());
@@ -2310,7 +2543,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
     var viewController = get(this, 'viewController');
     if (viewController) {
-      viewController = Ember.getPath(viewController);
+      viewController = get(viewController);
       if (viewController) {
         set(viewController, 'view', this);
       }
@@ -2337,10 +2570,11 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     set(view, '_parentView', null);
 
     // remove view from childViews array.
-    var childViews = get(this, '_childViews');
-    Ember.ArrayUtils.removeObject(childViews, view);
+    var childViews = this._childViews;
 
-    this.propertyDidChange('childViews');
+    Ember.EnumerableUtils.removeObject(childViews, view);
+
+    this.propertyDidChange('childViews'); // HUH?! what happened to will change?
 
     return this;
   },
@@ -2387,9 +2621,8 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   willDestroy: function() {
     // calling this._super() will nuke computed properties and observers,
     // so collect any information we need before calling super.
-    var childViews = get(this, '_childViews'),
+    var childViews = this._childViews,
         parent     = get(this, '_parentView'),
-        elementId  = get(this, 'elementId'),
         childLen;
 
     // destroy the element -- this will avoid each child view destroying
@@ -2411,14 +2644,14 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
     this.state = 'destroyed';
 
-    childLen = get(childViews, 'length');
+    childLen = childViews.length;
     for (var i=childLen-1; i>=0; i--) {
       childViews[i].removedFromDOM = true;
       childViews[i].destroy();
     }
 
     // next remove view from global hash
-    delete Ember.View.views[get(this, 'elementId')];
+    if (!this.isVirtual) delete Ember.View.views[get(this, 'elementId')];
   },
 
   /**
@@ -2434,22 +2667,16 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     @test in createChildViews
   */
   createChildView: function(view, attrs) {
-    var coreAttrs, templateData;
-
     if (Ember.View.detect(view)) {
-      coreAttrs = { _parentView: this, templateData: get(this, 'templateData') };
+      attrs = attrs || {};
+      attrs._parentView = this;
+      attrs.templateData = attrs.templateData || get(this, 'templateData');
 
-      if (attrs) {
-        view = view.create(coreAttrs, attrs);
-      } else {
-        view = view.create(coreAttrs);
-      }
-
-      var viewName = view.viewName;
+      view = view.create(attrs);
 
       // don't set the property on a virtual view, as they are invisible to
       // consumers of the view API
-      if (viewName) { set(get(this, 'concreteView'), viewName, view); }
+      if (view.viewName) { set(get(this, 'concreteView'), view.viewName, view); }
     } else {
       Ember.assert('You must pass instance or subclass of View', view instanceof Ember.View);
       Ember.assert("You can only pass attributes when a class is provided", !attrs);
@@ -2474,9 +2701,12 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     element of the actual DOM element.
   */
   _isVisibleDidChange: Ember.observer(function() {
+    var $el = this.$();
+    if (!$el) { return; }
+
     var isVisible = get(this, 'isVisible');
 
-    this.$().toggle(isVisible);
+    $el.toggle(isVisible);
 
     if (this._isAncestorHidden()) { return; }
 
@@ -2488,7 +2718,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   }, 'isVisible'),
 
   _notifyBecameVisible: function() {
-    this.fire('becameVisible');
+    this.trigger('becameVisible');
 
     this.forEachChildView(function(view) {
       var isVisible = get(view, 'isVisible');
@@ -2500,7 +2730,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
   },
 
   _notifyBecameHidden: function() {
-    this.fire('becameHidden');
+    this.trigger('becameHidden');
     this.forEachChildView(function(view) {
       var isVisible = get(view, 'isVisible');
 
@@ -2544,11 +2774,20 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     Override the default event firing from Ember.Evented to
     also call methods with the given name.
   */
-  fire: function(name) {
-    if (this[name]) {
-      this[name].apply(this, [].slice.call(arguments, 1));
-    }
+  trigger: function(name) {
     this._super.apply(this, arguments);
+    var method = this[name];
+    if (method) {
+      var args = [], i, l;
+      for (i = 1, l = arguments.length; i < l; i++) {
+        args.push(arguments[i]);
+      }
+      return method.apply(this, args);
+    }
+  },
+
+  has: function(name) {
+    return Ember.typeOf(this[name]) === 'function' || this._super(name);
   },
 
   // .......................................................
@@ -2636,6 +2875,96 @@ Ember.View.reopen({
   domManager: DOMManager
 });
 
+Ember.View.reopenClass({
+
+  /**
+    @private
+
+    Parse a path and return an object which holds the parsed properties.
+
+    For example a path like "content.isEnabled:enabled:disabled" wil return the
+    following object:
+
+        {
+          path: "content.isEnabled",
+          className: "enabled",
+          falsyClassName: "disabled",
+          classNames: ":enabled:disabled"
+        }
+
+  */
+  _parsePropertyPath: function(path) {
+    var split = path.split(/:/),
+        propertyPath = split[0],
+        classNames = "",
+        className,
+        falsyClassName;
+
+    // check if the property is defined as prop:class or prop:trueClass:falseClass
+    if (split.length > 1) {
+      className = split[1];
+      if (split.length === 3) { falsyClassName = split[2]; }
+
+      classNames = ':' + className;
+      if (falsyClassName) { classNames += ":" + falsyClassName; }
+    }
+
+    return {
+      path: propertyPath,
+      classNames: classNames,
+      className: (className === '') ? undefined : className,
+      falsyClassName: falsyClassName
+    };
+  },
+
+  /**
+    @private
+
+    Get the class name for a given value, based on the path, optional className
+    and optional falsyClassName.
+
+    - if the value is truthy and a className is defined, the className is returned
+    - if the value is true, the dasherized last part of the supplied path is returned
+    - if the value is false and a falsyClassName is supplied, the falsyClassName is returned
+    - if the value is truthy, the value is returned
+    - if none of the above rules apply, null is returned
+
+  */
+  _classStringForValue: function(path, val, className, falsyClassName) {
+    // If the value is truthy and we're using the colon syntax,
+    // we should return the className directly
+    if (!!val && className) {
+      return className;
+
+    // If value is a Boolean and true, return the dasherized property
+    // name.
+    } else if (val === true) {
+      // catch syntax like isEnabled::not-enabled
+      if (val === true && !className && falsyClassName) { return null; }
+
+      // Normalize property path to be suitable for use
+      // as a class name. For exaple, content.foo.barBaz
+      // becomes bar-baz.
+      var parts = path.split('.');
+      return Ember.String.dasherize(parts[parts.length-1]);
+
+    // If the value is false and a falsyClassName is specified, return it
+    } else if (val === false && falsyClassName) {
+      return falsyClassName;
+
+    // If the value is not false, undefined, or null, return the current
+    // value of the property.
+    } else if (val !== false && val !== undefined && val !== null) {
+      return val;
+
+    // Nothing to display. Return null so that the old class is removed
+    // but no new class is added.
+    } else {
+      return null;
+    }
+  }
+});
+
 // Create a global view hash.
 Ember.View.views = {};
 
@@ -2681,7 +3010,7 @@ Ember.View.states = {
     },
 
     $: function() {
-      return Ember.$();
+      return undefined;
     },
 
     getElement: function() {
@@ -2736,15 +3065,9 @@ Ember.View.states.preRender = {
   empty: Ember.K,
 
   setElement: function(view, value) {
-    view.beginPropertyChanges();
-    view.invalidateRecursively('element');
-
     if (value !== null) {
       view.transitionTo('hasElement');
     }
-
-    view.endPropertyChanges();
-
     return value;
   }
 };
@@ -2792,7 +3115,7 @@ Ember.View.states.inBuffer = {
     var buffer = view.buffer;
 
     childView = this.createChildView(childView, options);
-    get(view, '_childViews').push(childView);
+    view._childViews.push(childView);
 
     childView.renderToBuffer(buffer);
 
@@ -2823,8 +3146,6 @@ Ember.View.states.inBuffer = {
   },
 
   setElement: function(view, value) {
-    view.invalidateRecursively('element');
-
     if (value === null) {
       view.transitionTo('preRender');
     } else {
@@ -2867,8 +3188,6 @@ Ember.View.states.hasElement = {
 
   setElement: function(view, value) {
     if (value === null) {
-      view.invalidateRecursively('element');
-
       view.transitionTo('preRender');
     } else {
       throw "You cannot set an element to a non-null value when the element is already in the DOM.";
@@ -2899,9 +3218,9 @@ Ember.View.states.hasElement = {
   },
 
   empty: function(view) {
-    var _childViews = get(view, '_childViews'), len, idx;
+    var _childViews = view._childViews, len, idx;
     if (_childViews) {
-      len = get(_childViews, 'length');
+      len = _childViews.length;
       for (idx = 0; idx < len; idx++) {
         _childViews[idx]._notifyWillDestroyElement();
       }
@@ -2911,9 +3230,10 @@ Ember.View.states.hasElement = {
 
   // Handle events from `Ember.EventDispatcher`
   handleEvent: function(view, eventName, evt) {
-    var handler = view[eventName];
-    if (Ember.typeOf(handler) === 'function') {
-      return handler.call(view, evt);
+    if (view.has(eventName)) {
+      // Handler should be able to re-dispatch events, so we don't
+      // preventDefault or stopPropagation.
+      return view.trigger(eventName, evt);
     } else {
       return true; // continue event propagation
     }
@@ -2994,7 +3314,7 @@ Ember.View.states.destroyed = {
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 var get = Ember.get, set = Ember.set, meta = Ember.meta;
-var forEach = Ember.ArrayUtils.forEach;
+var forEach = Ember.EnumerableUtils.forEach;
 
 var childViewsProperty = Ember.computed(function() {
   return get(this, '_childViews');
@@ -3039,7 +3359,7 @@ var childViewsProperty = Ember.computed(function() {
   The views in a container's `childViews` array should be added and removed by manipulating
   the `childViews` property directly.
 
-  To remove a view pass that view into a `removeObject` call on the container's `childViews` property. 
+  To remove a view pass that view into a `removeObject` call on the container's `childViews` property.
 
   Given an empty `<body>` the following code
 
@@ -3076,7 +3396,7 @@ var childViewsProperty = Ember.computed(function() {
         </div>
 
 
-  Similarly, adding a child view is accomplished by adding `Ember.View` instances to the 
+  Similarly, adding a child view is accomplished by adding `Ember.View` instances to the
   container's `childViews` property.
 
   Given an empty `<body>` the following code
@@ -3109,17 +3429,18 @@ var childViewsProperty = Ember.computed(function() {
 
         aContainer.get('childViews') // [aContainer.aView, aContainer.bView]
         aContainer.get('childViews').pushObject(AnotherViewClass.create())
-        aContainer.get('childViews') // [aContainer.aView, <AnotherViewClass instance>]
+        aContainer.get('childViews') // [aContainer.aView, aContainer.bView, <AnotherViewClass instance>]
 
   Will result in the following HTML
 
         <div class="ember-view the-container">
           <div class="ember-view">A</div>
+          <div class="ember-view">B</div>
           <div class="ember-view">Another view</div>
         </div>
 
 
-  Direct manipulation of childViews presence or absence in the DOM via calls to 
+  Direct manipulation of childViews presence or absence in the DOM via calls to
   `remove` or `removeFromParent` or calls to a container's `removeChild` may not behave
   correctly.
 
@@ -3163,7 +3484,7 @@ var childViewsProperty = Ember.computed(function() {
 
   ## Templates and Layout
   A `template`, `templateName`, `defaultTemplate`, `layout`, `layoutName` or `defaultLayout`
-  property on a container view will not result in the template or layout being rendered. 
+  property on a container view will not result in the template or layout being rendered.
   The HTML contents of a `Ember.ContainerView`'s DOM representation will only be the rendered HTML
   of its child views.
 
@@ -3195,12 +3516,12 @@ var childViewsProperty = Ember.computed(function() {
 Ember.ContainerView = Ember.View.extend({
 
   init: function() {
+    this._super();
+
     var childViews = get(this, 'childViews');
     Ember.defineProperty(this, 'childViews', childViewsProperty);
 
-    this._super();
-
-    var _childViews = get(this, '_childViews');
+    var _childViews = this._childViews;
 
     forEach(childViews, function(viewName, idx) {
       var view;
@@ -3215,6 +3536,9 @@ Ember.ContainerView = Ember.View.extend({
 
       _childViews[idx] = view;
     }, this);
+
+    var currentView = get(this, 'currentView');
+    if (currentView) _childViews.push(this.createChildView(currentView));
 
     // Make the _childViews array observable
     Ember.A(_childViews);
@@ -3339,6 +3663,7 @@ Ember.ContainerView = Ember.View.extend({
 
     if (currentView) {
       childViews.removeObject(currentView);
+      currentView.destroy();
     }
   }, 'currentView'),
 
@@ -3462,7 +3787,7 @@ var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt;
           classNames: ['a-collection'],
           content: ['A','B','C'],
           itemViewClass: Ember.View.extend({
-            template: Ember.Handlebars.compile("the letter: {{content}}")
+            template: Ember.Handlebars.compile("the letter: {{view.content}}")
           })
         })
 
@@ -3476,8 +3801,8 @@ var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt;
           <div class="ember-view">the letter: C</div>
         </div>
 
-
   ## Automatic matching of parent/child tagNames
+
   Setting the `tagName` property of a `CollectionView` to any of 
   "ul", "ol", "table", "thead", "tbody", "tfoot", "tr", or "select" will result
   in the item views receiving an appropriately matched `tagName` property.
@@ -3489,7 +3814,7 @@ var get = Ember.get, set = Ember.set, fmt = Ember.String.fmt;
           tagName: 'ul',
           content: ['A','B','C'],
           itemViewClass: Ember.View.extend({
-            template: Ember.Handlebars.compile("the letter: {{content}}")
+            template: Ember.Handlebars.compile("the letter: {{view.content}}")
           })
         })
 
@@ -3670,7 +3995,7 @@ Ember.CollectionView = Ember.ContainerView.extend(
         addedViews = [], view, item, idx, len, itemTagName;
 
     if ('string' === typeof itemViewClass) {
-      itemViewClass = Ember.getPath(itemViewClass);
+      itemViewClass = get(itemViewClass);
     }
 
     Ember.assert(fmt("itemViewClass must be a subclass of Ember.View, not %@", [itemViewClass]), Ember.View.detect(itemViewClass));

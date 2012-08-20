@@ -9,18 +9,57 @@ require("./states");
 
 
 (function() {
-var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.String.fmt;
+var get = Ember.get;
 
+Ember.StateManager.reopen(
+/** @scope Ember.StateManager.prototype */ {
+
+  /**
+    If the current state is a view state or the descendent of a view state,
+    this property will be the view associated with it. If there is no
+    view state active in this state manager, this value will be null.
+
+    @type Ember.View
+  */
+  currentView: Ember.computed(function() {
+    var currentState = get(this, 'currentState'),
+        view;
+
+    while (currentState) {
+      // TODO: Remove this when view state is removed
+      if (get(currentState, 'isViewState')) {
+        view = get(currentState, 'view');
+        if (view) { return view; }
+      }
+
+      currentState = get(currentState, 'parentState');
+    }
+
+    return null;
+  }).property('currentState').cacheable()
+
+});
+
+})();
+
+
+
+(function() {
+var get = Ember.get, set = Ember.set;
 /**
   @class
-  
+  @deprecated
+
+  Ember.ViewState extends Ember.State to control the presence of a childView within a
+  container based on the current state of the ViewState's StateManager.
+
   ## Interactions with Ember's View System.
-  When combined with instances of `Ember.ViewState`, StateManager is designed to 
-  interact with Ember's view system to control which views are added to 
+  When combined with instances of `Ember.StateManager`, ViewState is designed to
+  interact with Ember's view system to control which views are added to
   and removed from the DOM based on the manager's current state.
 
   By default, a StateManager will manage views inside the 'body' element. This can be
-  customized by setting the `rootElement` property to a CSS selector of an existing 
+  customized by setting the `rootElement` property to a CSS selector of an existing
   HTML element you would prefer to receive view rendering.
 
 
@@ -35,7 +74,7 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
       aLayoutView = Ember.ContainerView.create()
 
       // make sure this view instance is added to the browser
-      aLayoutView.appendTo('body') 
+      aLayoutView.appendTo('body')
 
       App.viewStates = Ember.StateManager.create({
         rootView: aLayoutView
@@ -68,7 +107,7 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
         })
       })
 
-      viewStates.goToState('showingPeople')
+      viewStates.transitionTo('showingPeople')
 
   The above code will change the rendered HTML from
 
@@ -82,10 +121,10 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
         </div>
       </body>
 
-  Changing the current state via `goToState` from `showingPeople` to
+  Changing the current state via `transitionTo` from `showingPeople` to
   `showingPhotos` will remove the `showingPeople` view and add the `showingPhotos` view:
 
-      viewStates.goToState('showingPhotos')
+      viewStates.transitionTo('showingPhotos')
 
   will change the rendered HTML to
 
@@ -121,7 +160,7 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
       })
 
 
-      viewStates.goToState('showingPeople.withEditingPanel')
+      viewStates.transitionTo('showingPeople.withEditingPanel')
 
 
   Will result in the following rendered HTML:
@@ -144,10 +183,10 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
       viewStates = Ember.StateManager.create({
         aState: Ember.ViewState.create({
           view: Ember.View.extend({}),
-          enter: function(manager, transition){
+          enter: function(manager){
             // calling _super ensures this view will be
             // properly inserted
-            this._super(manager, transition);
+            this._super(manager);
 
             // now you can do other things
           }
@@ -189,8 +228,8 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
 
 
   If you prefer to start with an empty body and manage state programmatically you
-  can also take advantage of StateManager's `rootView` property and the ability of 
-  `Ember.ContainerView`s to manually manage their child views. 
+  can also take advantage of StateManager's `rootView` property and the ability of
+  `Ember.ContainerView`s to manually manage their child views.
 
 
       dashboard = Ember.ContainerView.create({
@@ -222,7 +261,7 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
       dashboard.appendTo('body')
 
   ## User Manipulation of State via `{{action}}` Helpers
-  The Handlebars `{{action}}` helper is StateManager-aware and will use StateManager action sending 
+  The Handlebars `{{action}}` helper is StateManager-aware and will use StateManager action sending
   to connect user interaction to action-based state transitions.
 
   Given the following body and handlebars template
@@ -248,45 +287,16 @@ var get = Ember.get, set = Ember.set, getPath = Ember.getPath, fmt = Ember.Strin
   `App.appStates.aState` with `App.appStates` as the first argument and a
   `jQuery.Event` object as the second object. The `jQuery.Event` will include a property
   `view` that references the `Ember.View` object that was interacted with.
-  
+
 **/
-Ember.StateManager.reopen(
-/** @scope Ember.StateManager.prototype */ {
-
-  /**
-    If the current state is a view state or the descendent of a view state,
-    this property will be the view associated with it. If there is no
-    view state active in this state manager, this value will be null.
-
-    @property
-  */
-  currentView: Ember.computed(function() {
-    var currentState = get(this, 'currentState'),
-        view;
-
-    while (currentState) {
-      if (get(currentState, 'isViewState')) {
-        view = get(currentState, 'view');
-        if (view) { return view; }
-      }
-
-      currentState = get(currentState, 'parentState');
-    }
-
-    return null;
-  }).property('currentState').cacheable()
-
-});
-
-})();
-
-
-
-(function() {
-var get = Ember.get, set = Ember.set;
-
-Ember.ViewState = Ember.State.extend({
+Ember.ViewState = Ember.State.extend(
+/** @scope Ember.ViewState.prototype */ {
   isViewState: true,
+
+  init: function() {
+    Ember.deprecate("Ember.ViewState is deprecated and will be removed from future releases. Consider using the outlet pattern to display nested views instead. For more information, see http://emberjs.com/guides/outlets/.");
+    return this._super();
+  },
 
   enter: function(stateManager) {
     var view = get(this, 'view'), root, childViews;
