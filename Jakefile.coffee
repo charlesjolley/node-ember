@@ -18,7 +18,13 @@ FORCED_DEPENDENCIES =
 
 
 npmVersion = (version) ->
-  version.replace /^([^\d]*\d+\.\d+\.\d+)\.(.*)$/, '$1-$2'
+  matches = (/^([^\d]*\d+\.\d+)(\.\d+)?(\.(.*))?$/).exec version
+  if matches
+    rep = "#{matches[1]}#{matches[2] or '.0'}"
+    rep = "#{rep}-#{matches[4]}" if matches[4]
+  else
+    rep = version
+  rep
 
 
 desc "builds ember files and package.json for this package from source"
