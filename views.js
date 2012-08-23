@@ -15,7 +15,7 @@ require("./runtime");
 // License:   Licensed under MIT license (see license.js)
 // ==========================================================================
 
-Ember.assert("Ember Views require jQuery 1.7", window.jQuery && (window.jQuery().jquery.match(/^1\.7(\.\d+)?(pre|rc\d?)?/) || Ember.ENV.FORCE_JQUERY));
+Ember.assert("Ember Views require jQuery 1.7 or 1.8", window.jQuery && (window.jQuery().jquery.match(/^1\.[78](\.\d+)?(pre|rc\d?)?/) || Ember.ENV.FORCE_JQUERY));
 Ember.$ = window.jQuery;
 
 })();
@@ -677,7 +677,8 @@ queues.splice(Ember.$.inArray('actions', queues)+1, 0, 'render');
 (function() {
 var get = Ember.get, set = Ember.set;
 
-Ember.ControllerMixin.reopen({
+// @class declaration and documentation in runtime/lib/controllers/controller.js
+Ember.ControllerMixin.reopen(/** @scope Ember.ControllerMixin.prototype */ {
 
   target: null,
   controllers: null,
@@ -794,7 +795,7 @@ Ember.ControllerMixin.reopen({
 
     outletName = outletName || 'view';
 
-    Ember.assert("You must supply a name or a view class to connectOutlets, but not both", (!!name && !viewClass && !controller) || (!name && !!viewClass));
+    Ember.assert("You must supply a name or a view class to connectOutlet, but not both", (!!name && !viewClass && !controller) || (!name && !!viewClass));
 
     if (name) {
       var namespace = get(this, 'namespace'),
@@ -808,8 +809,10 @@ Ember.ControllerMixin.reopen({
       Ember.assert("The name you supplied " + name + " did not resolve to a controller " + name + 'Controller', (!!controller && !!context) || !context);
     }
 
-    if (controller && context) { controller.set('content', context); }
-    view = viewClass.create();
+    if (controller && context) { set(controller, 'content', context); }
+
+    view = this.createOutletView(outletName, viewClass);
+
     if (controller) { set(view, 'controller', controller); }
     set(this, outletName, view);
 
@@ -836,9 +839,28 @@ Ember.ControllerMixin.reopen({
       controllerName = controllerNames[i] + 'Controller';
       set(this, controllerName, get(controllers, controllerName));
     }
+  },
+
+  /**
+    `disconnectOutlet` removes previously attached view from given outlet.
+
+    @param  {String} outletName the outlet name. (optional)
+   */
+  disconnectOutlet: function(outletName) {
+    outletName = outletName || 'view';
+
+    set(this, outletName, null);
+  },
+
+  /**
+    `createOutletView` is a hook you may want to override if you need to do
+    something special with the view created for the outlet. For example
+    you may want to implement views sharing across outlets.
+  */
+  createOutletView: function(outletName, viewClass) {
+    return viewClass.create();
   }
 });
-
 
 })();
 
@@ -1013,11 +1035,11 @@ var invokeForState = {
   and a different class name if it evaluates to false, you can pass a binding
   like this:
 
-    // Applies 'enabled' class when isEnabled is true and 'disabled' when isEnabled is false
-    Ember.View.create({
-      classNameBindings: ['isEnabled:enabled:disabled']
-      isEnabled: true
-    });
+      // Applies 'enabled' class when isEnabled is true and 'disabled' when isEnabled is false
+      Ember.View.create({
+        classNameBindings: ['isEnabled:enabled:disabled']
+        isEnabled: true
+      });
 
   Will result in view instances with an HTML representation of:
 
@@ -1029,21 +1051,20 @@ var invokeForState = {
 
   This syntax offers the convenience to add a class if a property is `false`:
 
-    // Applies no class when isEnabled is true and class 'disabled' when isEnabled is false
-    Ember.View.create({
-      classNameBindings: ['isEnabled::disabled']
-      isEnabled: true
-    });
+      // Applies no class when isEnabled is true and class 'disabled' when isEnabled is false
+      Ember.View.create({
+        classNameBindings: ['isEnabled::disabled']
+        isEnabled: true
+      });
 
   Will result in view instances with an HTML representation of:
 
-    <div id="ember1" class="ember-view"></div>
+      <div id="ember1" class="ember-view"></div>
 
   When the `isEnabled` property on the view is set to `false`, it will result
   in view instances with an HTML representation of:
 
-    <div id="ember1" class="ember-view disabled"></div>
-
+      <div id="ember1" class="ember-view disabled"></div>
 
   Updates to the the value of a class name binding will result in automatic update 
   of the  HTML `class` attribute in the view's rendered HTML representation.
@@ -1454,7 +1475,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     } else {
       return get(this, '_context');
     }
-  }).cacheable(),
+  }).volatile(),
 
   /**
     @private
@@ -1703,7 +1724,7 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     var template = get(this, 'layout') || get(this, 'template');
 
     if (template) {
-      var context = get(this, '_context');
+      var context = get(this, 'context');
       var keywords = this.cloneKeywords();
 
       var data = {
@@ -2377,6 +2398,10 @@ Ember.View = Ember.Object.extend(Ember.Evented,
     return buffer;
   },
 
+  renderToBufferIfNeeded: function () {
+    return this.invokeForState('renderToBufferIfNeeded', this);
+  },
+
   beforeRender: function(buffer) {
     this.applyAttributesToBuffer(buffer);
   },
@@ -2832,18 +2857,16 @@ Ember.View = Ember.Object.extend(Ember.Evented,
 
 /** @private */
 var DOMManager = {
-  prepend: function(view, childView) {
-    childView._insertElementLater(function() {
-      var element = view.$();
-      element.prepend(childView.$());
-    });
+  prepend: function(view, html) {
+    view.$().prepend(html);
   },
 
-  after: function(view, nextView) {
-    nextView._insertElementLater(function() {
-      var element = view.$();
-      element.after(nextView.$());
-    });
+  after: function(view, html) {
+    view.$().after(html);
+  },
+
+  html: function(view, html) {
+    view.$().html(html);
   },
 
   replace: function(view) {
@@ -2857,12 +2880,7 @@ var DOMManager = {
   },
 
   remove: function(view) {
-    var elem = get(view, 'element');
-
-    set(view, 'element', null);
-    view._lastInsert = null;
-
-    Ember.$(elem).remove();
+    view.$().remove();
   },
 
   empty: function(view) {
@@ -2894,7 +2912,7 @@ Ember.View.reopenClass({
 
   */
   _parsePropertyPath: function(path) {
-    var split = path.split(/:/),
+    var split = path.split(':'),
         propertyPath = split[0],
         classNames = "",
         className,
@@ -3026,6 +3044,10 @@ Ember.View.states = {
       set(view, 'element', null);
       view._lastInsert = null;
       return view;
+    },
+
+    renderToBufferIfNeeded: function () {
+      return false;
     }
   }
 };
@@ -3060,6 +3082,10 @@ Ember.View.states.preRender = {
     fn.call(view);
     view.transitionTo('inDOM');
     view._notifyDidInsertElement();
+  },
+
+  renderToBufferIfNeeded: function(view) {
+    return view.renderToBuffer();
   },
 
   empty: Ember.K,
@@ -3139,6 +3165,10 @@ Ember.View.states.inBuffer = {
     Ember.assert("Emptying a view in the inBuffer state is not allowed and should not happen under normal circumstances. Most likely there is a bug in your application. This may be due to excessive property change notifications.");
   },
 
+  renderToBufferIfNeeded: function (view) {
+    return view.buffer;
+  },
+
   // It should be impossible for a rendered view to be scheduled for
   // insertion.
   insertElement: function() {
@@ -3214,6 +3244,8 @@ Ember.View.states.hasElement = {
   destroyElement: function(view) {
     view._notifyWillDestroyElement();
     view.domManager.remove(view);
+    view._lastInsert = null;
+    set(view, 'element', null);
     return view;
   },
 
@@ -3282,6 +3314,10 @@ Ember.View.states.destroyed = {
 
   setElement: function() {
     throw fmt(destroyedError, ["set('element', ...)"]);
+  },
+
+  renderToBufferIfNeeded: function() {
+    throw fmt(destroyedError, ["renderToBufferIfNeeded"]);
   },
 
   // Since element insertion is scheduled, don't do anything if
@@ -3638,23 +3674,6 @@ Ember.ContainerView = Ember.View.extend({
     });
   },
 
-  /**
-    Schedules a child view to be inserted into the DOM after bindings have
-    finished syncing for this run loop.
-
-    @param {Ember.View} view the child view to insert
-    @param {Ember.View} prev the child view after which the specified view should
-                     be inserted
-    @private
-  */
-  _scheduleInsertion: function(view, prev) {
-    if (prev) {
-      prev.domManager.after(prev, view);
-    } else {
-      this.domManager.prepend(this, view);
-    }
-  },
-
   currentView: null,
 
   _currentViewWillChange: Ember.beforeObserver(function() {
@@ -3674,7 +3693,11 @@ Ember.ContainerView = Ember.View.extend({
     if (currentView) {
       childViews.pushObject(currentView);
     }
-  }, 'currentView')
+  }, 'currentView'),
+
+  _ensureChildrenAreInDOM: function () {
+    this.invokeForState('ensureChildrenAreInDOM', this);
+  }
 });
 
 // Ember.ContainerView extends the default view states to provide different
@@ -3720,15 +3743,25 @@ Ember.ContainerView.states = {
     },
 
     childViewsDidChange: function(view, views, start, added) {
-      // If the DOM element for this container view already exists,
-      // schedule each child view to insert its DOM representation after
-      // bindings have finished syncing.
-      var prev = start === 0 ? null : views[start-1];
+      Ember.run.scheduleOnce('render', this, '_ensureChildrenAreInDOM');
+    },
 
-      for (var i=start; i<start+added; i++) {
-        view = views[i];
-        this._scheduleInsertion(view, prev);
-        prev = view;
+    ensureChildrenAreInDOM: function(view) {
+      var childViews = view.get('childViews'), i, len, childView, previous, buffer;
+      for (i = 0, len = childViews.length; i < len; i++) {
+        childView = childViews[i];
+        buffer = childView.renderToBufferIfNeeded();
+        if (buffer) {
+          childView._notifyWillInsertElement();
+          if (previous) {
+            previous.domManager.after(previous, buffer.string());
+          } else {
+            view.domManager.prepend(view, buffer.string());
+          }
+          childView.transitionTo('inDOM');
+          childView._notifyDidInsertElement();
+        }
+        previous = childView;
       }
     }
   }

@@ -989,6 +989,13 @@ OrderedSet.prototype = {
     return this.list.length === 0;
   },
 
+  has: function(obj) {
+    var guid = guidFor(obj),
+        presenceSet = this.presenceSet;
+
+    return guid in presenceSet;
+  },
+
   forEach: function(fn, self) {
     // allow mutation during iteration
     var list = this.list.slice();
@@ -1819,6 +1826,18 @@ Ember._suspendBeforeObserver = function(obj, path, target, method, callback) {
 
 Ember._suspendObserver = function(obj, path, target, method, callback) {
   return Ember._suspendListener(obj, changeEvent(path), target, method, callback);
+};
+
+var map = Ember.ArrayPolyfills.map;
+
+Ember._suspendBeforeObservers = function(obj, paths, target, method, callback) {
+  var events = map.call(paths, beforeEvent);
+  return Ember._suspendListeners(obj, events, target, method, callback);
+};
+
+Ember._suspendObservers = function(obj, paths, target, method, callback) {
+  var events = map.call(paths, changeEvent);
+  return Ember._suspendListeners(obj, events, target, method, callback);
 };
 
 /** @private */
@@ -3107,6 +3126,37 @@ function suspendListener(obj, eventName, target, method, callback) {
   }
 }
 
+function suspendListeners(obj, eventNames, target, method, callback) {
+  if (!method && 'function' === typeof target) {
+    method = target;
+    target = null;
+  }
+
+  var oldActions = [],
+      actionSets = [],
+      eventName, actionSet, methodGuid, action, i, l;
+
+  for (i=0, l=eventNames.length; i<l; i++) {
+    eventName = eventNames[i];
+    actionSet = actionSetFor(obj, eventName, target, true),
+    methodGuid = guidFor(method);
+
+    oldActions.push(actionSet && actionSet[methodGuid]);
+    actionSets.push(actionSet);
+
+    actionSet[methodGuid] = null;
+  }
+
+  try {
+    return callback.call(target);
+  } finally {
+    for (i=0, l=oldActions.length; i<l; i++) {
+      eventName = eventNames[i];
+      actionSets[i][methodGuid] = oldActions[i];
+    }
+  }
+}
+
 // returns a list of currently watched events
 /** @memberOf Ember */
 function watchedEvents(obj) {
@@ -3178,6 +3228,7 @@ function listenersFor(obj, eventName) {
 Ember.addListener = addListener;
 Ember.removeListener = removeListener;
 Ember._suspendListener = suspendListener;
+Ember._suspendListeners = suspendListeners;
 Ember.sendEvent = sendEvent;
 Ember.hasListeners = hasListeners;
 Ember.watchedEvents = watchedEvents;
@@ -3664,6 +3715,35 @@ function invokeOnceTimer(guid, onceTimers) {
   delete timers[guid];
 }
 
+function scheduleOnce(queue, target, method, args) {
+  var tguid = Ember.guidFor(target),
+    mguid = Ember.guidFor(method),
+    onceTimers = run.autorun().onceTimers,
+    guid = onceTimers[tguid] && onceTimers[tguid][mguid],
+    timer;
+
+  if (guid && timers[guid]) {
+    timers[guid].args = args; // replace args
+  } else {
+    timer = {
+      target: target,
+      method: method,
+      args:   args,
+      tguid:  tguid,
+      mguid:  mguid
+    };
+
+    guid  = Ember.guidFor(timer);
+    timers[guid] = timer;
+    if (!onceTimers[tguid]) { onceTimers[tguid] = {}; }
+    onceTimers[tguid][mguid] = guid; // so it isn't scheduled more than once
+
+    run.schedule(queue, timer, invokeOnceTimer, guid, onceTimers);
+  }
+
+  return guid;
+}
+
 /**
   Schedules an item to run one time during the current RunLoop.  Calling
   this method with the same target/method combination will have no effect.
@@ -3693,32 +3773,11 @@ function invokeOnceTimer(guid, onceTimers) {
   @returns {Object} timer
 */
 Ember.run.once = function(target, method) {
-  var tguid = Ember.guidFor(target),
-      mguid = Ember.guidFor(method),
-      onceTimers = run.autorun().onceTimers,
-      guid = onceTimers[tguid] && onceTimers[tguid][mguid],
-      timer;
+  return scheduleOnce('actions', target, method, slice.call(arguments));
+};
 
-  if (guid && timers[guid]) {
-    timers[guid].args = slice.call(arguments); // replace args
-  } else {
-    timer = {
-      target: target,
-      method: method,
-      args:   slice.call(arguments),
-      tguid:  tguid,
-      mguid:  mguid
-    };
-
-    guid  = Ember.guidFor(timer);
-    timers[guid] = timer;
-    if (!onceTimers[tguid]) { onceTimers[tguid] = {}; }
-    onceTimers[tguid][mguid] = guid; // so it isn't scheduled more than once
-
-    run.schedule('actions', timer, invokeOnceTimer, guid, onceTimers);
-  }
-
-  return guid;
+Ember.run.scheduleOnce = function(queue, target, method) {
+  return scheduleOnce(queue, target, method, slice.call(arguments));
 };
 
 var scheduledNext;
@@ -4795,6 +4854,24 @@ Alias = function(methodName) {
 };
 Alias.prototype = new Ember.Descriptor();
 
+/**
+  Makes a property or method available via an additional name.
+
+      App.PaintSample = Ember.Object.extend({
+        color: 'red',
+        colour: Ember.alias('color'),
+        name: function(){
+          return "Zed";
+        },
+        moniker: Ember.alias("name")
+      });
+      var paintSample = App.PaintSample.create()
+      paintSample.get('colour'); //=> 'red'
+      paintSample.moniker(); //=> 'Zed'
+
+  @param {String} methodName name of the method or property to alias
+  @returns {Ember.Descriptor}
+*/
 Ember.alias = function(methodName) {
   return new Alias(methodName);
 };

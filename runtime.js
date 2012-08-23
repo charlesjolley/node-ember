@@ -155,7 +155,7 @@ Ember.none = function(obj) {
   @returns {Boolean}
 */
 Ember.empty = function(obj) {
-  return obj === null || obj === undefined || (obj.length === 0 && typeof obj !== 'function');
+  return obj === null || obj === undefined || (obj.length === 0 && typeof obj !== 'function') || (typeof obj === 'object' && Ember.get(obj, 'length') === 0);
 };
 
 /**
@@ -3238,17 +3238,23 @@ Ember.Evented = Ember.Mixin.create(
 // Ember.Object.  We only define this separately so that Ember.Set can depend on it
 
 
-
-var classToString = Ember.Mixin.prototype.toString;
-var set = Ember.set, get = Ember.get;
-var o_create = Ember.create,
+var set = Ember.set, get = Ember.get,
+    o_create = Ember.create,
     o_defineProperty = Ember.platform.defineProperty,
     a_slice = Array.prototype.slice,
+    GUID_KEY = Ember.GUID_KEY,
+    guidFor = Ember.guidFor,
+    generateGuid = Ember.generateGuid,
     meta = Ember.meta,
     rewatch = Ember.rewatch,
     finishChains = Ember.finishChains,
-    finishPartial = Ember.Mixin.finishPartial,
-    reopen = Ember.Mixin.prototype.reopen;
+    destroy = Ember.destroy,
+    schedule = Ember.run.schedule,
+    Mixin = Ember.Mixin,
+    applyMixin = Mixin._apply,
+    finishPartial = Mixin.finishPartial,
+    reopen = Mixin.prototype.reopen,
+    classToString = Mixin.prototype.toString;
 
 var undefinedDescriptor = {
   configurable: true,
@@ -3270,14 +3276,14 @@ function makeCtor() {
     if (!wasApplied) {
       Class.proto(); // prepare prototype...
     }
-    var m = Ember.meta(this);
+    o_defineProperty(this, GUID_KEY, undefinedDescriptor);
+    o_defineProperty(this, '_super', undefinedDescriptor);
+    var m = meta(this);
     m.proto = this;
     if (initMixins) {
       this.reopen.apply(this, initMixins);
       initMixins = null;
     }
-    o_defineProperty(this, Ember.GUID_KEY, undefinedDescriptor);
-    o_defineProperty(this, '_super', undefinedDescriptor);
     finishPartial(this, m);
     delete m.proto;
     finishChains(this);
@@ -3287,7 +3293,7 @@ function makeCtor() {
   Class.toString = classToString;
   Class.willReopen = function() {
     if (wasApplied) {
-      Class.PrototypeMixin = Ember.Mixin.create(Class.PrototypeMixin);
+      Class.PrototypeMixin = Mixin.create(Class.PrototypeMixin);
     }
 
     wasApplied = false;
@@ -3313,11 +3319,11 @@ function makeCtor() {
 
 var CoreObject = makeCtor();
 
-CoreObject.PrototypeMixin = Ember.Mixin.create(
+CoreObject.PrototypeMixin = Mixin.create(
 /** @scope Ember.CoreObject.prototype */ {
 
   reopen: function() {
-    Ember.Mixin._apply(this, arguments, true);
+    applyMixin(this, arguments, true);
     return this;
   },
 
@@ -3352,7 +3358,7 @@ CoreObject.PrototypeMixin = Ember.Mixin.create(
     if (this.willDestroy) { this.willDestroy(); }
 
     set(this, 'isDestroyed', true);
-    Ember.run.schedule('destroy', this, this._scheduledDestroy);
+    schedule('destroy', this, this._scheduledDestroy);
     return this;
   },
 
@@ -3363,7 +3369,7 @@ CoreObject.PrototypeMixin = Ember.Mixin.create(
     @private
   */
   _scheduledDestroy: function() {
-    Ember.destroy(this);
+    destroy(this);
     if (this.didDestroy) { this.didDestroy(); }
   },
 
@@ -3374,7 +3380,7 @@ CoreObject.PrototypeMixin = Ember.Mixin.create(
   },
 
   toString: function() {
-    return '<'+this.constructor.toString()+':'+Ember.guidFor(this)+'>';
+    return '<'+this.constructor.toString()+':'+guidFor(this)+'>';
   }
 });
 
@@ -3384,7 +3390,7 @@ if (Ember.config.overridePrototypeMixin) {
 
 CoreObject.__super__ = null;
 
-var ClassMixin = Ember.Mixin.create(
+var ClassMixin = Mixin.create(
 /** @scope Ember.ClassMixin.prototype */ {
 
   ClassMixin: Ember.required(),
@@ -3397,8 +3403,8 @@ var ClassMixin = Ember.Mixin.create(
 
   extend: function() {
     var Class = makeCtor(), proto;
-    Class.ClassMixin = Ember.Mixin.create(this.ClassMixin);
-    Class.PrototypeMixin = Ember.Mixin.create(this.PrototypeMixin);
+    Class.ClassMixin = Mixin.create(this.ClassMixin);
+    Class.PrototypeMixin = Mixin.create(this.PrototypeMixin);
 
     Class.ClassMixin.ownerConstructor = Class;
     Class.PrototypeMixin.ownerConstructor = Class;
@@ -3410,7 +3416,7 @@ var ClassMixin = Ember.Mixin.create(
 
     proto = Class.prototype = o_create(this.prototype);
     proto.constructor = Class;
-    Ember.generateGuid(proto, 'ember');
+    generateGuid(proto, 'ember');
     meta(proto).proto = proto; // this will disable observers on prototype
 
     Class.ClassMixin.apply(Class);
@@ -3431,7 +3437,7 @@ var ClassMixin = Ember.Mixin.create(
 
   reopenClass: function() {
     reopen.apply(this.ClassMixin, arguments);
-    Ember.Mixin._apply(this, arguments, false);
+    applyMixin(this, arguments, false);
     return this;
   },
 
@@ -4162,6 +4168,10 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
     entire array content will change.
   */
   _contentWillChange: Ember.beforeObserver(function() {
+    this._teardownContent();
+  }, 'content'),
+
+  _teardownContent: function() {
     var content = get(this, 'content');
 
     if (content) {
@@ -4170,8 +4180,7 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
         didChange: 'contentArrayDidChange'
       });
     }
-  }, 'content'),
-
+  },
 
   contentArrayWillChange: Ember.K,
   contentArrayDidChange: Ember.K,
@@ -4181,10 +4190,15 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
     entire array content has changed.
   */
   _contentDidChange: Ember.observer(function() {
-    var content = get(this, 'content'),
-        len     = content ? get(content, 'length') : 0;
+    var content = get(this, 'content');
 
     Ember.assert("Can't set ArrayProxy's content to itself", content !== this);
+
+    this._setupContent();
+  }, 'content'),
+
+  _setupContent: function() {
+    var content = get(this, 'content');
 
     if (content) {
       content.addArrayObserver(this, {
@@ -4192,20 +4206,16 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
         didChange: 'contentArrayDidChange'
       });
     }
-  }, 'content'),
+  },
 
   _arrangedContentWillChange: Ember.beforeObserver(function() {
     var arrangedContent = get(this, 'arrangedContent'),
         len = arrangedContent ? get(arrangedContent, 'length') : 0;
 
     this.arrangedContentArrayWillChange(this, 0, len, undefined);
+    this.arrangedContentWillChange(this);
 
-    if (arrangedContent) {
-      arrangedContent.removeArrayObserver(this, {
-        willChange: 'arrangedContentArrayWillChange',
-        didChange: 'arrangedContentArrayDidChange'
-      });
-    }
+    this._teardownArrangedContent(arrangedContent);
   }, 'arrangedContent'),
 
   _arrangedContentDidChange: Ember.observer(function() {
@@ -4214,15 +4224,36 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
 
     Ember.assert("Can't set ArrayProxy's content to itself", arrangedContent !== this);
 
+    this._setupArrangedContent();
+
+    this.arrangedContentDidChange(this);
+    this.arrangedContentArrayDidChange(this, 0, undefined, len);
+  }, 'arrangedContent'),
+
+  _setupArrangedContent: function() {
+    var arrangedContent = get(this, 'arrangedContent');
+
     if (arrangedContent) {
       arrangedContent.addArrayObserver(this, {
         willChange: 'arrangedContentArrayWillChange',
         didChange: 'arrangedContentArrayDidChange'
       });
     }
+  },
 
-    this.arrangedContentArrayDidChange(this, 0, undefined, len);
-  }, 'arrangedContent'),
+  _teardownArrangedContent: function() {
+    var arrangedContent = get(this, 'arrangedContent');
+
+    if (arrangedContent) {
+      arrangedContent.removeArrayObserver(this, {
+        willChange: 'arrangedContentArrayWillChange',
+        didChange: 'arrangedContentArrayDidChange'
+      });
+    }
+  },
+
+  arrangedContentWillChange: Ember.K,
+  arrangedContentDidChange: Ember.K,
 
   /** @private (nodoc) */
   objectAt: function(idx) {
@@ -4255,15 +4286,15 @@ Ember.ArrayProxy = Ember.Object.extend(Ember.MutableArray,
   /** @private (nodoc) */
   init: function() {
     this._super();
-    this._contentWillChange();
-    this._contentDidChange();
-    this._arrangedContentWillChange();
-    this._arrangedContentDidChange();
+    this._setupContent();
+    this._setupArrangedContent();
+  },
+
+  willDestroy: function() {
+    this._teardownArrangedContent();
+    this._teardownContent();
   }
-
 });
-
-
 
 
 })();
@@ -4848,6 +4879,33 @@ Ember.runLoadHooks = function(name, object) {
 
 
 (function() {
+/**
+  @class
+  
+  Ember.ControllerMixin provides a standard interface for all classes
+  that compose Ember's controller layer: Ember.Controller, Ember.ArrayController,
+  and Ember.ObjectController.
+  
+  Within an Ember.Router-managed application single shared instaces of every
+  Controller object in your application's namespace will be added to the
+  application's Ember.Router instance. See `Ember.Application#initialize`
+  for additional information.
+  
+  ## Views
+  By default a controller instance will be the rendering context
+  for its associated Ember.View. This connection is made during calls to
+  `Ember.ControllerMixin#connectOutlet`.
+  
+  Within the view's template, the Ember.View instance can be accessed
+  through the controller with `{{view}}`.
+  
+  ## Target Forwarding
+  By default a controller will target your application's Ember.Router instance.
+  Calls to `{{action}}` within the template of a controller's view are forwarded
+  to the router. See `Ember.Handlebars.helpers.action` for additional information.
+  
+  @extends Ember.Mixin
+*/
 Ember.ControllerMixin = Ember.Mixin.create({
   /**
     The object to which events from the view should be sent.
@@ -4873,7 +4931,29 @@ var get = Ember.get, set = Ember.set, forEach = Ember.EnumerableUtils.forEach;
 
 /**
  @class
+ 
+ Ember.SortableMixin provides a standard interface for array proxies
+ to specify a sort order and maintain this sorting when objects are added,
+ removed, or updated without changing the implicit order of their underlying
+ content array:
+ 
+      songs = [ 
+        {trackNumber: 4, title: 'Ob-La-Di, Ob-La-Da'},
+        {trackNumber: 2, title: 'Back in the U.S.S.R.'},
+        {trackNumber: 3, title: 'Glass Onion'},
+      ];  
 
+      songsController = Ember.ArrayController.create({
+        content: songs,
+        sortProperties: ['trackNumber']
+      });
+      
+      songsController.get('firstObject'); // {trackNumber: 2, title: 'Back in the U.S.S.R.'}
+      
+      songsController.addObject({trackNumber: 1, title: 'Dear Prudence'});
+      songsController.get('firstObject'); // {trackNumber: 1, title: 'Dear Prudence'}
+      
+ 
  @extends Ember.Mixin
  @extends Ember.MutableEnumerable
 */
@@ -5107,6 +5187,8 @@ var get = Ember.get, set = Ember.set;
   controller, use this class.
 
   @extends Ember.ArrayProxy
+  @extends Ember.SortableMixin
+  @extends Ember.ControllerMixin
 */
 
 Ember.ArrayController = Ember.ArrayProxy.extend(Ember.ControllerMixin,
@@ -5117,6 +5199,20 @@ Ember.ArrayController = Ember.ArrayProxy.extend(Ember.ControllerMixin,
 
 
 (function() {
+/**
+  @class
+  
+  Ember.ObjectController is part of Ember's Controller layer. A single
+  shared instance of each Ember.ObjectController subclass in your application's
+  namespace will be created at application initialization and be stored on your
+  application's Ember.Router instance.
+  
+  Ember.ObjectController derives its functionality from its superclass
+  Ember.ObjectProxy and the Ember.ControllerMixin mixin.
+  
+  @extends Ember.ObjectProxy
+  @extends Ember.ControllerMixin
+**/
 Ember.ObjectController = Ember.ObjectProxy.extend(Ember.ControllerMixin);
 
 })();

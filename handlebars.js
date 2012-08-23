@@ -261,31 +261,25 @@ if (Ember.EXTEND_PROTOTYPES) {
 /*jshint newcap:false*/
 var set = Ember.set, get = Ember.get;
 
+// DOMManager should just abstract dom manipulation between jquery and metamorph
 var DOMManager = {
   remove: function(view) {
-    var morph = view.morph;
-    if (morph.isRemoved()) { return; }
-    set(view, 'element', null);
-    view._lastInsert = null;
-    morph.remove();
+    view.morph.remove();
   },
 
-  prepend: function(view, childView) {
-    childView._insertElementLater(function() {
-      var morph = view.morph;
-      morph.prepend(childView.outerHTML);
-      childView.outerHTML = null;
-    });
+  prepend: function(view, html) {
+    view.morph.prepend(html);
   },
 
-  after: function(view, nextView) {
-    nextView._insertElementLater(function() {
-      var morph = view.morph;
-      morph.after(nextView.outerHTML);
-      nextView.outerHTML = null;
-    });
+  after: function(view, html) {
+    view.morph.after(html);
   },
 
+  html: function(view, html) {
+    view.morph.html(html);
+  },
+
+  // This is messed up.
   replace: function(view) {
     var morph = view.morph;
 
@@ -838,7 +832,7 @@ EmberHandlebars.registerHelper('bindAttr', function(options) {
       // to which we were bound has been removed from the view.
       // In that case, we can assume the template has been re-rendered
       // and we need to clean up the observer.
-      if (elem.length === 0) {
+      if (!elem || elem.length === 0) {
         Ember.removeObserver(pathRoot, path, invoker);
         return;
       }
@@ -953,7 +947,7 @@ EmberHandlebars.bindClasses = function(context, classBindings, view, bindAttrId,
 
       // If we can't find the element anymore, a parent template has been
       // re-rendered and we've been nuked. Remove the observer.
-      if (elem.length === 0) {
+      if (!elem || elem.length === 0) {
         Ember.removeObserver(pathRoot, path, invoker);
       } else {
         // If we had previously added a class to the element, remove it.
@@ -1623,6 +1617,34 @@ Ember.Handlebars.EachView = Ember.CollectionView.extend(Ember._Metamorph, {
   }
 });
 
+/**
+  
+  The `{{#each}}` helper loops over elements in a collection, rendering its block once for each item:
+  
+        Developers = [{name: 'Yehuda'},{name: 'Tom'}, {name: 'Paul'}];
+        
+        {{#each Developers}}
+          {{name}}
+        {{/each}}
+        
+  
+  `{{each}}` supports an alternative syntax with element naming:
+        
+        {{#each person in Developers}}
+          {{person.name}}
+        {{/each}}
+  
+  When looping over objects that do not have properties, `{{this}}` can be used to render the object:
+        
+        DeveloperNames = ['Yehuda', 'Tom', 'Paul']
+        
+        {{#each DeveloperNames}}
+          {{this}}
+        {{/each}}
+        
+  
+  @name Handlebars.helpers.each
+*/
 Ember.Handlebars.registerHelper('each', function(path, options) {
   if (arguments.length === 4) {
     Ember.assert("If you pass more than one argument to the each helper, it must be in the form #each foo in bar", arguments[1] === "in");
@@ -2023,6 +2045,8 @@ Ember.Handlebars.registerHelper('yield', function(options) {
 
 
 (function() {
+Ember.Handlebars.OutletView = Ember.ContainerView.extend(Ember._Metamorph);
+
 /**
   The `outlet` helper allows you to specify that the current
   view's controller will fill in the view for a given area.
@@ -2058,7 +2082,7 @@ Ember.Handlebars.registerHelper('outlet', function(property, options) {
 
   options.hash.currentViewBinding = "controller." + property;
 
-  return Ember.Handlebars.helpers.view.call(this, Ember.ContainerView, options);
+  return Ember.Handlebars.helpers.view.call(this, Ember.Handlebars.OutletView, options);
 });
 
 })();
@@ -2732,8 +2756,10 @@ Ember.Select = Ember.View.extend(
 
   _triggerChange: function() {
     var selection = get(this, 'selection');
+    var value = get(this, 'value');
 
     if (selection) { this.selectionDidChange(); }
+    if (value) { this.valueDidChange(); }
 
     this._change();
   },
