@@ -3,7 +3,7 @@
   "version": "1.0.0",
   "private": true,
   "dependencies": {
-    "convoy": "~0.3",
+    "convoy": "latest",
     "connect": "latest",
     "ember": "latest",
     "html5-manifest": "git://github.com/charlesjolley/html5-manifest.git#master"

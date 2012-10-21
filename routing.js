@@ -58,6 +58,11 @@ Ember._ResolvedState = Ember.Object.extend({
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get;
 
 // The Ember Routable mixin assumes the existance of a simple
@@ -87,13 +92,14 @@ var merge = function(original, hash) {
 };
 
 /**
-  @class
+  @class Routable
+  @namespace Ember
   @extends Ember.Mixin
 */
 Ember.Routable = Ember.Mixin.create({
   init: function() {
     var redirection;
-    this.on('connectOutlets', this, this.stashContext);
+    this.on('setup', this, this.stashContext);
 
     if (redirection = get(this, 'redirectsTo')) {
       Ember.assert("You cannot use `redirectsTo` if you already have a `connectOutlets` method", this.connectOutlets === Ember.K);
@@ -114,14 +120,24 @@ Ember.Routable = Ember.Mixin.create({
     Ember.assert("You cannot use `redirectsTo` on a state that has child states", !redirection || (!!redirection && !!get(this, 'isLeaf')));
   },
 
+  setup: function() {
+    return this.connectOutlets.apply(this, arguments);
+  },
+
   /**
     @private
 
     Whenever a routable state is entered, the context it was entered with
     is stashed so that we can regenerate the state's `absoluteURL` on
     demand.
+
+    @method stashContext
+    @param manager {Ember.StateManager}
+    @param context
   */
   stashContext: function(manager, context) {
+    this.router = manager;
+
     var serialized = this.serialize(manager, context);
     Ember.assert('serialize must return a hash', !serialized || typeof serialized === 'object');
 
@@ -140,6 +156,10 @@ Ember.Routable = Ember.Mixin.create({
     is notified to set the URL to the current absolute path.
 
     In general, this will update the browser's URL.
+
+    @method updateRoute
+    @param manager {Ember.StateManager}
+    @param location {Ember.Location}
   */
   updateRoute: function(manager, location) {
     if (get(this, 'isLeafRoute')) {
@@ -156,6 +176,10 @@ Ember.Routable = Ember.Mixin.create({
 
     This method is private, as it expects a serialized hash,
     not the original context object.
+
+    @method absoluteRoute
+    @param manager {Ember.StateManager}
+    @param hash {Hash}
   */
   absoluteRoute: function(manager, hash) {
     var parentState = get(this, 'parentState');
@@ -189,46 +213,58 @@ Ember.Routable = Ember.Mixin.create({
 
     At the moment, a state is routable if it has a string `route`
     property. This heuristic may change.
+
+    @property isRoutable
+    @type Boolean
   */
   isRoutable: Ember.computed(function() {
     return typeof get(this, 'route') === 'string';
-  }).cacheable(),
+  }),
 
   /**
     @private
 
     Determine if this is the last routeable state
+
+    @property isLeafRoute
+    @type Boolean
   */
   isLeafRoute: Ember.computed(function() {
     if (get(this, 'isLeaf')) { return true; }
     return !get(this, 'childStates').findProperty('isRoutable');
-  }).cacheable(),
+  }),
 
   /**
     @private
 
     A _RouteMatcher object generated from the current route's `route`
     string property.
+
+    @property routeMatcher
+    @type Ember._RouteMatcher
   */
   routeMatcher: Ember.computed(function() {
     var route = get(this, 'route');
     if (route) {
       return Ember._RouteMatcher.create({ route: route });
     }
-  }).cacheable(),
+  }),
 
   /**
     @private
 
     Check whether the route has dynamic segments and therefore takes
     a context.
+
+    @property hasContext
+    @type Boolean
   */
   hasContext: Ember.computed(function() {
     var routeMatcher = get(this, 'routeMatcher');
     if (routeMatcher) {
       return routeMatcher.identifiers.length > 0;
     }
-  }).cacheable(),
+  }),
 
   /**
     @private
@@ -236,16 +272,19 @@ Ember.Routable = Ember.Mixin.create({
     The model class associated with the current state. This property
     uses the `modelType` property, in order to allow it to be
     specified as a String.
+
+    @property modelClass
+    @type Ember.Object
   */
   modelClass: Ember.computed(function() {
     var modelType = get(this, 'modelType');
 
     if (typeof modelType === 'string') {
-      return Ember.get(window, modelType);
+      return Ember.get(Ember.lookup, modelType);
     } else {
       return modelType;
     }
-  }).cacheable(),
+  }),
 
   /**
     @private
@@ -260,6 +299,9 @@ Ember.Routable = Ember.Mixin.create({
     The process of initializing an application with a router will
     pass the application's namespace into the router, which will be
     used here.
+
+    @method modelClassFor
+    @param namespace {Ember.Namespace}
   */
   modelClassFor: function(namespace) {
     var modelClass, routeMatcher, identifiers, match, className;
@@ -300,6 +342,10 @@ Ember.Routable = Ember.Mixin.create({
     will be looked up as `namespace.Post.find(1)`. This is
     designed to work seamlessly with Ember Data, but will work
     fine with any class that has a `find` method.
+
+    @method deserialize
+    @param manager {Ember.StateManager}
+    @param params {Hash}
   */
   deserialize: function(manager, params) {
     var modelClass, routeMatcher, param;
@@ -321,6 +367,10 @@ Ember.Routable = Ember.Mixin.create({
     `id` of `12`, the serialize method will produce:
 
         { blog_post_id: 12 }
+
+    @method serialize
+    @param manager {Ember.StateManager}
+    @param context
   */
   serialize: function(manager, context) {
     var modelClass, routeMatcher, namespace, param, id;
@@ -339,6 +389,9 @@ Ember.Routable = Ember.Mixin.create({
 
   /**
     @private
+    @method resolvePath
+    @param manager {Ember.StateManager}
+    @param path {String}
   */
   resolvePath: function(manager, path) {
     if (get(this, 'isLeafRoute')) { return Ember.A(); }
@@ -393,6 +446,10 @@ Ember.Routable = Ember.Mixin.create({
     For example, if you were in the /posts/1/comments state, and you
     moved into the /posts/2/comments state, `routePath` will be called
     on the state whose path is `/posts` with the path `/2/comments`.
+
+    @method routePath
+    @param manager {Ember.StateManager}
+    @param path {String}
   */
   routePath: function(manager, path) {
     if (get(this, 'isLeafRoute')) { return; }
@@ -424,6 +481,10 @@ Ember.Routable = Ember.Mixin.create({
 
     Its job is to move the state manager into a parent
     state of the state it will eventually move into.
+
+    @method unroutePath
+    @param router {Ember.Router}
+    @param path {String}
   */
   unroutePath: function(router, path) {
     var parentState = get(this, 'parentState');
@@ -461,16 +522,69 @@ Ember.Routable = Ember.Mixin.create({
     router.send('unroutePath', path);
   },
 
+  parentTemplate: Ember.computed(function() {
+    var state = this, parentState, template;
+
+    while (state = get(state, 'parentState')) {
+      if (template = get(state, 'template')) {
+        return template;
+      }
+    }
+
+    return 'application';
+  }),
+
+  _template: Ember.computed(function(key, value) {
+    if (arguments.length > 1) { return value; }
+
+    if (value = get(this, 'template')) {
+      return value;
+    }
+
+    // If no template was explicitly supplied convert
+    // the class name into a template name. For example,
+    // App.PostRoute will return `post`.
+    var className = this.constructor.toString(), baseName;
+    if (/^[^\[].*Route$/.test(className)) {
+      baseName = className.match(/([^\.]+\.)*([^\.]+)/)[2];
+      baseName = baseName.replace(/Route$/, '');
+      return baseName.charAt(0).toLowerCase() + baseName.substr(1);
+    }
+  }),
+
+  render: function(options) {
+    options = options || {};
+
+    var template = options.template || get(this, '_template'),
+        parentTemplate = options.into || get(this, 'parentTemplate'),
+        controller = get(this.router, parentTemplate + "Controller");
+
+    var viewName = Ember.String.classify(template) + "View",
+        viewClass = get(get(this.router, 'namespace'), viewName);
+
+    viewClass = (viewClass || Ember.View).extend({
+      templateName: template
+    });
+
+    controller.set('view', viewClass.create());
+  },
+
   /**
     The `connectOutlets` event will be triggered once a
     state has been entered. It will be called with the
     route's context.
+
+    @event connectOutlets
+    @param router {Ember.Router}
+    @param [context*]
   */
   connectOutlets: Ember.K,
 
   /**
    The `navigateAway` event will be triggered when the
    URL changes due to the back/forward button
+
+   @event navigateAway
   */
   navigateAway: Ember.K
 });
@@ -481,9 +595,15 @@ Ember.Routable = Ember.Mixin.create({
 
 (function() {
 /**
-  @class
+@module ember
+@submodule ember-routing
+*/
+
+/**
+  @class Route
+  @namespace Ember
   @extends Ember.State
-  @extends Ember.Routable
+  @uses Ember.Routable
 */
 Ember.Route = Ember.State.extend(Ember.Routable);
 
@@ -496,6 +616,12 @@ var escapeForRegex = function(text) {
   return text.replace(/[\-\[\]{}()*+?.,\\\^\$|#\s]/g, "\\$&");
 };
 
+/**
+  @class _RouteMatcher
+  @namespace Ember
+  @private
+  @extends Ember.Object
+*/
 Ember._RouteMatcher = Ember.Object.extend({
   state: null,
 
@@ -554,9 +680,14 @@ Ember._RouteMatcher = Ember.Object.extend({
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get, set = Ember.set;
 
-/**
+/*
   This file implements the `location` API used by Ember's router.
 
   That API is:
@@ -568,17 +699,19 @@ var get = Ember.get, set = Ember.set;
 
   Calling setURL will not trigger onUpdateURL callbacks.
 
-  TODO: This, as well as the Ember.Location documentation below, should
-  perhaps be moved so that it's visible in the JsDoc output.
+  TODO: This should perhaps be moved so that it's visible in the doc output.
 */
-/**
-  @class
 
+/**
   Ember.Location returns an instance of the correct implementation of
   the `location` API.
 
   You can pass it a `implementation` ('hash', 'history', 'none') to force a
   particular implementation.
+
+  @class Location
+  @namespace Ember
+  @static
 */
 Ember.Location = {
   create: function(options) {
@@ -603,20 +736,24 @@ Ember.Location = {
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get, set = Ember.set;
 
 /**
-  @class
-
   Ember.NoneLocation does not interact with the browser. It is useful for
   testing, or when you need to manage state with your Router, but temporarily
   don't want it to muck with the URL (for example when you embed your
   application in a larger page).
 
+  @class NoneLocation
+  @namespace Ember
   @extends Ember.Object
 */
-Ember.NoneLocation = Ember.Object.extend(
-/** @scope Ember.NoneLocation.prototype */ {
+Ember.NoneLocation = Ember.Object.extend({
   path: '',
 
   getURL: function() {
@@ -646,21 +783,24 @@ Ember.Location.registerImplementation('none', Ember.NoneLocation);
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get, set = Ember.set;
 
 /**
-  @class
-
   Ember.HashLocation implements the location API using the browser's
   hash. At present, it relies on a hashchange event existing in the
   browser.
 
+  @class HashLocation
+  @namespace Ember
   @extends Ember.Object
 */
-Ember.HashLocation = Ember.Object.extend(
-/** @scope Ember.HashLocation.prototype */ {
+Ember.HashLocation = Ember.Object.extend({
 
-  /** @private */
   init: function() {
     set(this, 'location', get(this, 'location') || window.location);
   },
@@ -669,6 +809,8 @@ Ember.HashLocation = Ember.Object.extend(
     @private
 
     Returns the current `location.hash`, minus the '#' at the front.
+
+    @method getURL
   */
   getURL: function() {
     return get(this, 'location').hash.substr(1);
@@ -680,6 +822,9 @@ Ember.HashLocation = Ember.Object.extend(
     Set the `location.hash` and remembers what was set. This prevents
     `onUpdateURL` callbacks from triggering when the hash was set by
     `HashLocation`.
+
+    @method setURL
+    @param path {String}
   */
   setURL: function(path) {
     get(this, 'location').hash = path;
@@ -692,6 +837,9 @@ Ember.HashLocation = Ember.Object.extend(
     Register a callback to be invoked when the hash changes. These
     callbacks will execute when the user presses the back or forward
     button, but not after `setURL` is invoked.
+
+    @method onUpdateURL
+    @param callback {Function}
   */
   onUpdateURL: function(callback) {
     var self = this;
@@ -715,12 +863,14 @@ Ember.HashLocation = Ember.Object.extend(
 
     This is used, for example, when using the {{action}} helper
     to generate a URL based on an event.
+
+    @method formatURL
+    @param url {String}
   */
   formatURL: function(url) {
     return '#'+url;
   },
 
-  /** @private */
   willDestroy: function() {
     var guid = Ember.guidFor(this);
 
@@ -735,41 +885,55 @@ Ember.Location.registerImplementation('hash', Ember.HashLocation);
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get, set = Ember.set;
+var popstateReady = false;
 
 /**
-  @class
-
   Ember.HistoryLocation implements the location API using the browser's
   history.pushState API.
 
+  @class HistoryLocation
+  @namespace Ember
   @extends Ember.Object
 */
-Ember.HistoryLocation = Ember.Object.extend(
-/** @scope Ember.HistoryLocation.prototype */ {
+Ember.HistoryLocation = Ember.Object.extend({
 
-  /** @private */
   init: function() {
     set(this, 'location', get(this, 'location') || window.location);
-    set(this, '_initialURL', get(this, 'location').pathname);
+    this.initState();
+  },
+
+  /**
+    @private
+
+    Used to set state on first call to setURL
+
+    @method initState
+  */
+  initState: function() {
+    this.replaceState(get(this, 'location').pathname);
+    set(this, 'history', window.history);
   },
 
   /**
     Will be pre-pended to path upon state change
-   */
+
+    @property rootURL
+    @default '/'
+  */
   rootURL: '/',
 
   /**
     @private
 
-    Used to give history a starting reference
-   */
-  _initialURL: null,
-
-  /**
-    @private
-
     Returns the current `location.pathname`.
+
+    @method getURL
   */
   getURL: function() {
     return get(this, 'location').pathname;
@@ -779,16 +943,52 @@ Ember.HistoryLocation = Ember.Object.extend(
     @private
 
     Uses `history.pushState` to update the url without a page reload.
+
+    @method setURL
+    @param path {String}
   */
   setURL: function(path) {
-    var state = window.history.state,
-        initialURL = get(this, '_initialURL');
+    path = this.formatURL(path);
 
-    path = this.formatPath(path);
-
-    if ((initialURL !== path && !state) || (state && state.path !== path)) {
-      window.history.pushState({ path: path }, null, path);
+    if (this.getState().path !== path) {
+      popstateReady = true;
+      this.pushState(path);
     }
+  },
+
+  /**
+   @private
+
+   Get the current `history.state`
+
+   @method getState
+  */
+  getState: function() {
+    return get(this, 'history').state;
+  },
+
+  /**
+   @private
+
+   Pushes a new state
+
+   @method pushState
+   @param path {String}
+  */
+  pushState: function(path) {
+    window.history.pushState({ path: path }, null, path);
+  },
+
+  /**
+   @private
+
+   Replaces the current state
+
+   @method replaceState
+   @param path {String}
+  */
+  replaceState: function(path) {
+    window.history.replaceState({ path: path }, null, path);
   },
 
   /**
@@ -796,11 +996,17 @@ Ember.HistoryLocation = Ember.Object.extend(
 
     Register a callback to be invoked whenever the browser
     history changes, including using forward and back buttons.
+
+    @method onUpdateURL
+    @param callback {Function}
   */
   onUpdateURL: function(callback) {
     var guid = Ember.guidFor(this);
 
     Ember.$(window).bind('popstate.ember-location-'+guid, function(e) {
+      if(!popstateReady) {
+        return;
+      }
       callback(location.pathname);
     });
   },
@@ -808,29 +1014,21 @@ Ember.HistoryLocation = Ember.Object.extend(
   /**
     @private
 
-    returns the given path appended to rootURL
-   */
-  formatPath: function(path) {
+    Used when using `{{action}}` helper.  The url is always appended to the rootURL.
+
+    @method formatURL
+    @param url {String}
+  */
+  formatURL: function(url) {
     var rootURL = get(this, 'rootURL');
 
-    if (path !== '') {
+    if (url !== '') {
       rootURL = rootURL.replace(/\/$/, '');
     }
 
-    return rootURL + path;
+    return rootURL + url;
   },
 
-  /**
-    @private
-
-    Used when using {{action}} helper.  Since no formatting
-    is required we just return the url given.
-  */
-  formatURL: function(url) {
-    return url;
-  },
-
-  /** @private */
   willDestroy: function() {
     var guid = Ember.guidFor(this);
 
@@ -851,6 +1049,11 @@ Ember.Location.registerImplementation('history', Ember.HistoryLocation);
 
 
 (function() {
+/**
+@module ember
+@submodule ember-routing
+*/
+
 var get = Ember.get, set = Ember.set;
 
 var merge = function(original, hash) {
@@ -863,8 +1066,6 @@ var merge = function(original, hash) {
 };
 
 /**
-  @class
-
   `Ember.Router` is the subclass of `Ember.StateManager` responsible for providing URL-based
   application state detection. The `Ember.Router` instance of an application detects the browser URL
   at application load time and attempts to match it to a specific application state. Additionally
@@ -1157,12 +1358,14 @@ var merge = function(original, hash) {
   of Ember.ObjectController, Ember.ArrayController, Ember.Controller, or a custom Ember.Object that includes the
   Ember.ControllerMixin mixin.
 
-      App = Ember.Application.create({
-        FooController: Ember.Object.create(Ember.ControllerMixin),
-        Router: Ember.Router.extend({ ... })
-      });
+  ``` javascript
+  App = Ember.Application.create({
+    FooController: Ember.Object.create(Ember.ControllerMixin),
+    Router: Ember.Router.extend({ ... })
+  });
 
-      App.get('router.fooController'); // instance of App.FooController
+  App.get('router.fooController'); // instance of App.FooController
+  ```
 
   The controller singletons will have their `namespace` property set to the application and their `target`
   property set to the application's router singleton for easy integration with Ember's user event system.
@@ -1175,31 +1378,35 @@ var merge = function(original, hash) {
 
   Given the following application entered at the URL '#/':
 
-      App = Ember.Application.create({
-        Router: Ember.Router.extend({
-          root: Ember.Route.extend({
-            aRoute: Ember.Route.extend({
-              route: '/',
-              anActionOnTheRouter: function(router, context) {
-                router.transitionTo('anotherState', context);
-              }
-            })
-            anotherState: Ember.Route.extend({
-              route: '/differentUrl',
-              connectOutlets: function(router, context) {
-
-              }
-            })
-          })
+  ``` javascript
+  App = Ember.Application.create({
+    Router: Ember.Router.extend({
+      root: Ember.Route.extend({
+        aRoute: Ember.Route.extend({
+          route: '/',
+          anActionOnTheRouter: function(router, context) {
+            router.transitionTo('anotherState', context);
+          }
         })
-      });
-      App.initialize();
+        anotherState: Ember.Route.extend({
+          route: '/differentUrl',
+          connectOutlets: function(router, context) {
+
+          }
+        })
+      })
+    })
+  });
+  App.initialize();
+  ```
 
   The following template:
 
-      <script type="text/x-handlebars" data-template-name="aView">
-          <h1><a {{action anActionOnTheRouter}}>{{title}}</a></h1>
-      </script>
+  ``` handlebars
+  <script type="text/x-handlebars" data-template-name="aView">
+      <h1><a {{action anActionOnTheRouter}}>{{title}}</a></h1>
+  </script>
+  ```
 
   Will delegate `click` events on the rendered `h1` to the application's router instance. In this case the
   `anActionOnTheRouter` method of the state at 'root.aRoute' will be called with the view's controller
@@ -1208,39 +1415,44 @@ var merge = function(original, hash) {
   Different `context` can be supplied from within the `{{action}}` helper, allowing specific context passing
   between application states:
 
-      <script type="text/x-handlebars" data-template-name="photos">
-        {{#each photo in controller}}
-          <h1><a {{action showPhoto photo}}>{{title}}</a></h1>
-        {{/each}}
-      </script>
+  ``` handlebars
+  <script type="text/x-handlebars" data-template-name="photos">
+    {{#each photo in controller}}
+      <h1><a {{action showPhoto photo}}>{{title}}</a></h1>
+    {{/each}}
+  </script>
+  ```
 
-  See Handlebars.helpers.action for additional usage examples.
+  See `Handlebars.helpers.action` for additional usage examples.
 
 
   ## Changing View Hierarchy in Response To State Change
+
   Changes in application state that change the URL should be accompanied by associated changes in view
   hierarchy.  This can be accomplished by calling 'connectOutlet' on the injected controller singletons from
   within the 'connectOutlets' event of an Ember.Route:
 
-      App = Ember.Application.create({
-        OneController: Ember.ObjectController.extend(),
-        OneView: Ember.View.extend(),
+  ``` javascript
+  App = Ember.Application.create({
+    OneController: Ember.ObjectController.extend(),
+    OneView: Ember.View.extend(),
 
-        AnotherController: Ember.ObjectController.extend(),
-        AnotherView: Ember.View.extend(),
+    AnotherController: Ember.ObjectController.extend(),
+    AnotherView: Ember.View.extend(),
 
-        Router: Ember.Router.extend({
-          root: Ember.Route.extend({
-            aRoute: Ember.Route.extend({
-              route: '/',
-              connectOutlets: function(router, context) {
-                router.get('oneController').connectOutlet('another');
-              },
-            })
-          })
+    Router: Ember.Router.extend({
+      root: Ember.Route.extend({
+        aRoute: Ember.Route.extend({
+          route: '/',
+          connectOutlets: function(router, context) {
+            router.get('oneController').connectOutlet('another');
+          },
         })
-      });
-      App.initialize();
+      })
+    })
+  });
+  App.initialize();
+  ```
 
 
   This will detect the '{{outlet}}' portion of `oneController`'s view (an instance of `App.OneView`) and
@@ -1252,13 +1464,16 @@ var merge = function(original, hash) {
   controller injections, see `Ember.Application#initialize()`. For additional information about view context,
   see `Ember.View`.
 
+  @class Router
+  @namespace Ember
   @extends Ember.StateManager
 */
 Ember.Router = Ember.StateManager.extend(
 /** @scope Ember.Router.prototype */ {
 
   /**
-    @property {String}
+    @property initialState
+    @type String
     @default 'root'
   */
   initialState: 'root',
@@ -1268,9 +1483,12 @@ Ember.Router = Ember.StateManager.extend(
     URL state. The following values are supported:
 
     * 'hash': Uses URL fragment identifiers (like #/blog/1) for routing.
+    * 'history': Uses the browser's history.pushstate API for routing. Only works in
+       modern browsers with pushstate support.
     * 'none': Does not read or set the browser URL, but still allows for
       routing to happen. Useful for testing.
 
+    @property location
     @type String
     @default 'hash'
   */
@@ -1280,19 +1498,12 @@ Ember.Router = Ember.StateManager.extend(
     This is only used when a history location is used so that applications that
     don't live at the root of the domain can append paths to their root.
 
+    @property rootURL
     @type String
     @default '/'
   */
 
   rootURL: '/',
-
-  /**
-    On router, transitionEvent should be called connectOutlets
-
-    @property {String}
-    @default 'connectOutlets'
-  */
-  transitionEvent: 'connectOutlets',
 
   transitionTo: function() {
     this.abortRoutingPromises();
@@ -1307,6 +1518,7 @@ Ember.Router = Ember.StateManager.extend(
     var routableState;
 
     try {
+      path = path.replace(get(this, 'rootURL'), '');
       path = path.replace(/^(?=[^\/])/, "/");
 
       this.send('navigateAway');
@@ -1338,8 +1550,8 @@ Ember.Router = Ember.StateManager.extend(
     var currentState = get(this, 'currentState') || this,
         state = this.findStateByPath(currentState, path);
 
-    Ember.assert(Ember.String.fmt("Could not find route with path '%@'", [path]), !!state);
-    Ember.assert("To get a URL for a state, it must have a `route` property.", !!get(state, 'routeMatcher'));
+    Ember.assert(Ember.String.fmt("Could not find route with path '%@'", [path]), state);
+    Ember.assert(Ember.String.fmt("To get a URL for the state '%@', it must have a `route` property.", [path]), get(state, 'routeMatcher'));
 
     var location = get(this, 'location'),
         absoluteRoute = state.absoluteRoute(this, hash);
@@ -1352,18 +1564,17 @@ Ember.Router = Ember.StateManager.extend(
     var currentState = get(this, 'currentState');
     var targetStateName = currentState.lookupEventTransition(eventName);
 
-    Ember.assert(Ember.String.fmt("You must specify a target state for event '%@' in order to link to it in the current state '%@'.", [eventName, get(currentState, 'path')]), !!targetStateName);
+    Ember.assert(Ember.String.fmt("You must specify a target state for event '%@' in order to link to it in the current state '%@'.", [eventName, get(currentState, 'path')]), targetStateName);
 
     var targetState = this.findStateByPath(currentState, targetStateName);
 
-    Ember.assert("Your target state name " + targetStateName + " for event " + eventName + " did not resolve to a state", !!targetState);
+    Ember.assert("Your target state name " + targetStateName + " for event " + eventName + " did not resolve to a state", targetState);
 
     var hash = this.serializeRecursively(targetState, contexts, {});
 
     return this.urlFor(targetStateName, hash);
   },
 
-  /** @private */
   serializeRecursively: function(state, contexts, hash) {
     var parentState,
         context = get(state, 'hasContext') ? contexts.pop() : null;
@@ -1383,9 +1594,6 @@ Ember.Router = Ember.StateManager.extend(
     }
   },
 
-  /**
-    @private
-  */
   handleStatePromises: function(states, complete) {
     this.abortRoutingPromises();
 
@@ -1415,8 +1623,26 @@ Ember.Router = Ember.StateManager.extend(
     }).start();
   },
 
-  /** @private */
+  moveStatesIntoRoot: function() {
+    this.root = Ember.Route.extend();
+
+    for (var name in this) {
+      if (name === "constructor") { continue; }
+
+      var state = this[name];
+
+      if (state instanceof Ember.Route || Ember.Route.detect(state)) {
+        this.root[name] = state;
+        delete this[name];
+      }
+    }
+  },
+
   init: function() {
+    if (!this.root) {
+      this.moveStatesIntoRoot();
+    }
+
     this._super();
 
     var location = get(this, 'location'),
@@ -1428,9 +1654,23 @@ Ember.Router = Ember.StateManager.extend(
         rootURL: rootURL
       }));
     }
+
+    this.assignRouter(this, this);
   },
 
-  /** @private */
+  assignRouter: function(state, router) {
+    state.router = router;
+
+    var childStates = state.states;
+
+    if (childStates) {
+      for (var stateName in childStates) {
+        if (!childStates.hasOwnProperty(stateName)) { continue; }
+        this.assignRouter(childStates[stateName], router);
+      }
+    }
+  },
+
   willDestroy: function() {
     get(this, 'location').destroy();
   }
@@ -1441,11 +1681,13 @@ Ember.Router = Ember.StateManager.extend(
 
 
 (function() {
-// ==========================================================================
-// Project:  Ember Routing
-// Copyright: ©2012 Tilde Inc. and contributors.
-// License:   Licensed under MIT license (see license.js)
-// ==========================================================================
+/**
+Ember Routing
+
+@module ember
+@submodule ember-routing
+@requires ember-states
+*/
 
 })();
 

@@ -15,6 +15,7 @@ FORCED_DEPENDENCIES =
   'ember': ['ember-application']
   'states': ['ember-runtime']
   'data': ['ember-states']
+  'runtime': ['rsvp']
 
 
 npmVersion = (version) ->
@@ -71,7 +72,9 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
       '//',
       ''
     ]
-
+    
+    toMerge = []
+    
     if NEEDS_REAL_WINDOW.indexOf(moduleName)>=0 or dependencies.jquery
       outputBody.push 'require("window");'
       # TODO: convert to published package
@@ -85,8 +88,10 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
       else
         outputBody.push switch packageName
           when 'handlebars'
+            toMerge.push 'Handlebars'
             'var Handlebars = require("handlebars");'
           when 'jquery'
+            toMerge.push 'jQuery'
             'var jQuery, $; jQuery = $ = require("jquery");'
           else
             "require(\"#{packageName}\");"
@@ -102,6 +107,9 @@ task 'dist', ['vendor:update', 'vendor:dist'], ->
               """
           externalDependencies[packageName] = packageVersion
           dependencySources[packageName] = moduleName # for debug info only
+
+    toMerge.forEach (namespace) ->
+      outputBody.push "Ember.imports.#{namespace} = Ember.imports.#{namespace} || #{namespace};"
 
     outputBody.push "\n"
 
