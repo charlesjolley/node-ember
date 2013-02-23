@@ -1,3 +1,4 @@
+[![build status](https://secure.travis-ci.org/charlesjolley/node-ember.png)](http://travis-ci.org/charlesjolley/node-ember)
 # Ember for Node
 
 Ember.js is a framework for building ambitious client-side applications on the
