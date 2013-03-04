@@ -22,7 +22,7 @@ This will add Ember to the global namespace in your application.
 require('ember');
 
 MyApp = Ember.Application.create({
-  hi: function() { console.log('Hi! I'm an app!'); }
+  hi: function() { console.log("Hi! I'm an app!"); }
 });
 ```
 
