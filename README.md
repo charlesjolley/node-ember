@@ -1,3 +1,8 @@
+# This repo is no longer being updated. 
+
+The Ember.js Core Team has taken ownership of the ember NPM package. Here's hoping we get a new build soon!
+
+
 # Ember for Node
 
 Ember.js is a framework for building ambitious client-side applications on the
